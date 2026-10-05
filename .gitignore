@@ -122,6 +122,9 @@ celerybeat.pid
 
 # Environments
 .env
+data/
+*.session
+*.session-journal
 .venv
 env/
 venv/
