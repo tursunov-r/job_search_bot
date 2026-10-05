@@ -1,10 +1,12 @@
+import json
 import logging
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 
+from jobsbot.processing.stack_tags import matches_stack
 from jobsbot.storage.db import async_session
-from jobsbot.storage.models import Vacancy
+from jobsbot.storage.models import Subscriber, Vacancy
 from jobsbot.storage.repo import (
     get_active_subscribers,
     get_pending_vacancies_for_subscriber,
@@ -27,6 +29,13 @@ def format_vacancy(vacancy: Vacancy) -> str:
     return "\n".join(lines)
 
 
+def _subscriber_skills(subscriber: Subscriber) -> list[str]:
+    try:
+        return json.loads(subscriber.skills)
+    except (TypeError, ValueError):
+        return []
+
+
 async def push_new_vacancies(bot: Bot) -> None:
     async with async_session() as session:
         subscribers = await get_active_subscribers(session)
@@ -35,13 +44,21 @@ async def push_new_vacancies(bot: Bot) -> None:
             if not vacancies:
                 continue
 
-            last_sent_id = subscriber.last_vacancy_sent_id
+            selected_skills = _subscriber_skills(subscriber)
+            cursor_id = subscriber.last_vacancy_sent_id
+
             for vacancy in vacancies:
+                if not matches_stack(vacancy.title, vacancy.description, selected_skills):
+                    # Skipped on purpose (doesn't match the subscriber's stack) —
+                    # still advance the cursor so it isn't re-checked every cycle.
+                    cursor_id = vacancy.id
+                    continue
+
                 try:
                     await bot.send_message(
                         subscriber.telegram_user_id, format_vacancy(vacancy), parse_mode="HTML"
                     )
-                    last_sent_id = vacancy.id
+                    cursor_id = vacancy.id
                 except TelegramForbiddenError:
                     subscriber.status = "blocked"
                     session.add(subscriber)
@@ -54,5 +71,5 @@ async def push_new_vacancies(bot: Bot) -> None:
                     logger.exception("Failed to push vacancy %s to %s", vacancy.id, subscriber.telegram_user_id)
                     break
 
-            if last_sent_id and last_sent_id != subscriber.last_vacancy_sent_id:
-                await mark_subscriber_cursor(session, subscriber, last_sent_id)
+            if cursor_id != subscriber.last_vacancy_sent_id:
+                await mark_subscriber_cursor(session, subscriber, cursor_id)

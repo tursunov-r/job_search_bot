@@ -45,6 +45,7 @@ class Subscriber(SQLModel, table=True):
     subscribed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_vacancy_sent_id: int | None = Field(default=None, foreign_key="vacancies.id")
     last_interaction_at: datetime | None = None
+    skills: str = Field(default="[]")  # JSON array of stack_tags keys the subscriber selected
 
 
 class AdCampaign(SQLModel, table=True):

@@ -1,18 +1,18 @@
 import asyncio
 import logging
 
+import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from jobsbot.ads.scheduler import broadcast_due_campaigns
 from jobsbot.bot.dispatcher import build_bot, build_dispatcher
 from jobsbot.bot.push import push_new_vacancies
 from jobsbot.config import settings
-from jobsbot.ingestion.hh_adapter import fetch_vacancies
-from jobsbot.ingestion import linkedin_adapter
+from jobsbot.ingestion import hh_adapter, linkedin_adapter
 from jobsbot.ingestion.telegram_listener import TelegramChannelListener
 from jobsbot.processing.pipeline import ingest
 from jobsbot.storage.db import async_session, init_db
-from jobsbot.storage.repo import get_or_create_source
+from jobsbot.storage.repo import get_or_create_source, update_vacancy_description
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -20,19 +20,35 @@ logger = logging.getLogger(__name__)
 
 async def poll_hh() -> None:
     try:
-        raw_vacancies = await fetch_vacancies()
+        raw_vacancies = await hh_adapter.fetch_vacancies()
     except Exception:
         logger.exception("HH polling failed")
         return
 
+    new_vacancies = []
     async with async_session() as session:
         source = await get_or_create_source(session, "hh", "hh_search", "hh.ru search")
-        inserted = 0
         for raw in raw_vacancies:
             vacancy = await ingest(session, raw, source.id)
             if vacancy:
-                inserted += 1
-        logger.info("HH poll: fetched %d, inserted %d new", len(raw_vacancies), inserted)
+                new_vacancies.append(vacancy)
+        logger.info("HH poll: fetched %d, inserted %d new", len(raw_vacancies), len(new_vacancies))
+
+    if not new_vacancies:
+        return
+
+    async with httpx.AsyncClient(
+        headers={"User-Agent": hh_adapter.USER_AGENT}, timeout=15.0, follow_redirects=True
+    ) as client:
+        for i, vacancy in enumerate(new_vacancies):
+            if not vacancy.url:
+                continue
+            description = await hh_adapter.fetch_description(client, vacancy.url)
+            if description:
+                async with async_session() as session:
+                    await update_vacancy_description(session, vacancy.id, description)
+            if i < len(new_vacancies) - 1:
+                await asyncio.sleep(hh_adapter.DETAIL_FETCH_DELAY_SECONDS)
 
 
 async def poll_linkedin() -> None:

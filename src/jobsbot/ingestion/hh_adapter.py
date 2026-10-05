@@ -7,10 +7,13 @@ LinkedIn adapter parses public search pages: no login, conservative request
 pacing, and isolated behind its own module so it can be swapped out easily.
 
 The search-results page does not render a job description snippet (HH moved
-that into the per-vacancy detail page, which would mean one extra request per
-result — too heavy for a polling MVP), so ``description`` is left ``None``.
-This is fine for filtering purposes because the search query itself already
-restricts results to ones matching "python".
+that into the per-vacancy detail page), so the listing parser leaves
+``description`` as ``None`` — fetching it for every search result would be
+too heavy for a polling MVP. Instead, ``fetch_description`` is called once
+per vacancy, but only for vacancies that already passed the keyword filter
+and dedup and got inserted as genuinely new rows (see ``main.py::poll_hh``),
+so the extra per-item request only happens for real new postings, not the
+whole search result set.
 """
 
 import asyncio
@@ -34,6 +37,7 @@ SEARCH_QUERY = "python"
 AREA_RUSSIA = "113"
 MAX_PAGES = 2
 PAGE_DELAY_SECONDS = 2.0
+DETAIL_FETCH_DELAY_SECONDS = 1.5
 
 
 def _canonical_url(href: str) -> str:
@@ -73,6 +77,25 @@ def _parse_page(html: str) -> list[RawVacancy]:
         )
 
     return vacancies
+
+
+def _parse_description(html: str) -> str | None:
+    tree = LexborHTMLParser(html)
+    node = tree.css_first('[data-qa="vacancy-description"]')
+    if node is None:
+        return None
+    text = node.text(separator=" ").strip()
+    return text or None
+
+
+async def fetch_description(client: httpx.AsyncClient, url: str) -> str | None:
+    try:
+        response = await client.get(url)
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        logger.warning("HH vacancy detail fetch failed for %s: %s", url, exc)
+        return None
+    return _parse_description(response.text)
 
 
 async def fetch_vacancies() -> list[RawVacancy]:

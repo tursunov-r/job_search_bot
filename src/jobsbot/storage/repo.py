@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 
 from sqlmodel import select
@@ -76,6 +77,24 @@ async def get_pending_vacancies_for_subscriber(
 async def mark_subscriber_cursor(session: AsyncSession, subscriber: Subscriber, vacancy_id: int) -> None:
     subscriber.last_vacancy_sent_id = vacancy_id
     session.add(subscriber)
+    await session.commit()
+
+
+async def update_subscriber_skills(session: AsyncSession, subscriber: Subscriber, skills: list[str]) -> Subscriber:
+    subscriber.skills = json.dumps(sorted(set(skills)))
+    session.add(subscriber)
+    await session.commit()
+    await session.refresh(subscriber)
+    return subscriber
+
+
+async def update_vacancy_description(session: AsyncSession, vacancy_id: int, description: str) -> None:
+    result = await session.exec(select(Vacancy).where(Vacancy.id == vacancy_id))
+    vacancy = result.first()
+    if vacancy is None:
+        return
+    vacancy.description = description
+    session.add(vacancy)
     await session.commit()
 
 
