@@ -3,6 +3,7 @@ import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+from jobsbot.ads.scheduler import broadcast_due_campaigns
 from jobsbot.bot.dispatcher import build_bot, build_dispatcher
 from jobsbot.bot.push import push_new_vacancies
 from jobsbot.config import settings
@@ -45,6 +46,12 @@ async def main() -> None:
         push_new_vacancies,
         "interval",
         seconds=settings.vacancy_push_interval_seconds,
+        args=[bot],
+    )
+    scheduler.add_job(
+        broadcast_due_campaigns,
+        "interval",
+        seconds=settings.ad_broadcast_check_interval_seconds,
         args=[bot],
     )
     scheduler.start()

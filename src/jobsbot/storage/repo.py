@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from jobsbot.storage.models import Source, Subscriber, Vacancy
+from jobsbot.storage.models import AdCampaign, AdImpression, Source, Subscriber, Vacancy
 
 
 async def get_or_create_source(
@@ -77,3 +77,77 @@ async def mark_subscriber_cursor(session: AsyncSession, subscriber: Subscriber, 
     subscriber.last_vacancy_sent_id = vacancy_id
     session.add(subscriber)
     await session.commit()
+
+
+async def record_ad_impression(
+    session: AsyncSession, campaign_id: int, subscriber_id: int, delivery_status: str = "sent"
+) -> None:
+    session.add(
+        AdImpression(campaign_id=campaign_id, subscriber_id=subscriber_id, delivery_status=delivery_status)
+    )
+    await session.commit()
+
+
+async def get_active_campaigns(session: AsyncSession) -> list[AdCampaign]:
+    now = datetime.now(timezone.utc)
+    result = await session.exec(
+        select(AdCampaign).where(
+            AdCampaign.status == "active",
+            (AdCampaign.starts_at == None) | (AdCampaign.starts_at <= now),  # noqa: E711
+            (AdCampaign.ends_at == None) | (AdCampaign.ends_at >= now),  # noqa: E711
+        )
+    )
+    return list(result.all())
+
+
+async def create_campaign(
+    session: AsyncSession,
+    name: str,
+    message_text: str,
+    media_file_id: str | None = None,
+    starts_at: datetime | None = None,
+    ends_at: datetime | None = None,
+    send_interval_hours: int | None = None,
+    status: str = "draft",
+) -> AdCampaign:
+    campaign = AdCampaign(
+        name=name,
+        message_text=message_text,
+        media_file_id=media_file_id,
+        starts_at=starts_at,
+        ends_at=ends_at,
+        send_interval_hours=send_interval_hours,
+        status=status,
+    )
+    session.add(campaign)
+    await session.commit()
+    await session.refresh(campaign)
+    return campaign
+
+
+async def get_campaign(session: AsyncSession, campaign_id: int) -> AdCampaign | None:
+    result = await session.exec(select(AdCampaign).where(AdCampaign.id == campaign_id))
+    return result.first()
+
+
+async def list_campaigns(session: AsyncSession) -> list[AdCampaign]:
+    result = await session.exec(select(AdCampaign).order_by(AdCampaign.id))
+    return list(result.all())
+
+
+async def set_campaign_status(session: AsyncSession, campaign: AdCampaign, status: str) -> AdCampaign:
+    campaign.status = status
+    session.add(campaign)
+    await session.commit()
+    await session.refresh(campaign)
+    return campaign
+
+
+async def get_last_impression_sent_at(session: AsyncSession, campaign_id: int) -> datetime | None:
+    result = await session.exec(
+        select(AdImpression.sent_at)
+        .where(AdImpression.campaign_id == campaign_id)
+        .order_by(AdImpression.sent_at.desc())
+        .limit(1)
+    )
+    return result.first()
