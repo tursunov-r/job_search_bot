@@ -7,6 +7,7 @@ from jobsbot.bot.dispatcher import build_bot, build_dispatcher
 from jobsbot.bot.push import push_new_vacancies
 from jobsbot.config import settings
 from jobsbot.ingestion.hh_adapter import fetch_vacancies
+from jobsbot.ingestion.telegram_listener import TelegramChannelListener
 from jobsbot.processing.pipeline import ingest
 from jobsbot.storage.db import async_session, init_db
 from jobsbot.storage.repo import get_or_create_source
@@ -50,11 +51,19 @@ async def main() -> None:
 
     await poll_hh()
 
+    telegram_listener = TelegramChannelListener()
+    await telegram_listener.start()
+
+    tasks = [dispatcher.start_polling(bot)]
+    if telegram_listener.enabled:
+        tasks.append(telegram_listener.run_forever())
+
     try:
-        await dispatcher.start_polling(bot)
+        await asyncio.gather(*tasks)
     finally:
         scheduler.shutdown(wait=False)
         await bot.session.close()
+        await telegram_listener.stop()
 
 
 if __name__ == "__main__":
