@@ -1,0 +1,26 @@
+import html
+import re
+
+from jobsbot.ingestion.base import RawVacancy
+
+_WHITESPACE_RE = re.compile(r"\s+")
+
+
+def _clean(text: str | None) -> str | None:
+    if text is None:
+        return None
+    text = html.unescape(text)
+    text = _WHITESPACE_RE.sub(" ", text).strip()
+    return text or None
+
+
+def clean_raw_vacancy(raw: RawVacancy) -> RawVacancy:
+    return RawVacancy(
+        title=_clean(raw.title) or "",
+        description=_clean(raw.description),
+        url=raw.url,
+        company=_clean(raw.company),
+        salary_text=_clean(raw.salary_text),
+        location=_clean(raw.location),
+        posted_at=raw.posted_at,
+    )
