@@ -8,6 +8,7 @@ from jobsbot.bot.dispatcher import build_bot, build_dispatcher
 from jobsbot.bot.push import push_new_vacancies
 from jobsbot.config import settings
 from jobsbot.ingestion.hh_adapter import fetch_vacancies
+from jobsbot.ingestion import linkedin_adapter
 from jobsbot.ingestion.telegram_listener import TelegramChannelListener
 from jobsbot.processing.pipeline import ingest
 from jobsbot.storage.db import async_session, init_db
@@ -34,6 +35,23 @@ async def poll_hh() -> None:
         logger.info("HH poll: fetched %d, inserted %d new", len(raw_vacancies), inserted)
 
 
+async def poll_linkedin() -> None:
+    try:
+        raw_vacancies = await linkedin_adapter.fetch_vacancies()
+    except Exception:
+        logger.exception("LinkedIn polling failed")
+        return
+
+    async with async_session() as session:
+        source = await get_or_create_source(session, "linkedin", "linkedin_search", "LinkedIn search")
+        inserted = 0
+        for raw in raw_vacancies:
+            vacancy = await ingest(session, raw, source.id)
+            if vacancy:
+                inserted += 1
+        logger.info("LinkedIn poll: fetched %d, inserted %d new", len(raw_vacancies), inserted)
+
+
 async def main() -> None:
     await init_db()
 
@@ -42,6 +60,8 @@ async def main() -> None:
 
     scheduler = AsyncIOScheduler()
     scheduler.add_job(poll_hh, "interval", seconds=settings.hh_poll_interval_seconds)
+    if settings.linkedin_enabled:
+        scheduler.add_job(poll_linkedin, "interval", seconds=settings.linkedin_poll_interval_seconds)
     scheduler.add_job(
         push_new_vacancies,
         "interval",
@@ -57,6 +77,8 @@ async def main() -> None:
     scheduler.start()
 
     await poll_hh()
+    if settings.linkedin_enabled:
+        await poll_linkedin()
 
     telegram_listener = TelegramChannelListener()
     await telegram_listener.start()
