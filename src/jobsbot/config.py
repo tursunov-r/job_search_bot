@@ -19,8 +19,17 @@ class Settings(BaseSettings):
     vacancy_push_interval_seconds: int = 180
     ad_broadcast_check_interval_seconds: int = 1800
 
-    database_url: str = "sqlite+aiosqlite:///data/bot.db"
+    db_host: str = "postgres"
+    db_port: int = 5432
+    db_name: str = "jobsbot"
+    db_user: str = "jobsbot"
+    db_password: str
+
     super_admin_telegram_user_id: int
+
+    @property
+    def get_db_url(self) -> str:
+        return f"postgresql+asyncpg://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
 
 
 settings = Settings()
