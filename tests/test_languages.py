@@ -17,3 +17,8 @@ def test_description_requires_two_matches():
 def test_detects_javascript_without_colliding_with_java():
     assert detect_languages("JavaScript Developer", "") == ["javascript"]
     assert detect_languages("TypeScript Developer", "") == ["javascript"]
+
+
+def test_detects_go_via_golang_not_bare_go():
+    assert detect_languages("Golang Developer", "") == ["go"]
+    assert detect_languages("Let's go get coffee", "") == []
