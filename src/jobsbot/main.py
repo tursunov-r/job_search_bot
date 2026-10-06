@@ -9,7 +9,7 @@ from jobsbot.bot.dispatcher import build_bot, build_dispatcher
 from jobsbot.bot.push import push_new_vacancies
 from jobsbot.config import settings
 from jobsbot.ingestion import hh_adapter, linkedin_adapter
-from jobsbot.ingestion.telegram_listener import TelegramChannelListener
+from jobsbot.ingestion.telegram_poller import TelegramChannelPoller
 from jobsbot.processing.languages import LANGUAGES
 from jobsbot.processing.pipeline import ingest
 from jobsbot.storage.db import async_session, init_db
@@ -90,10 +90,17 @@ async def main() -> None:
     bot = build_bot()
     dispatcher = build_dispatcher()
 
+    telegram_poller = TelegramChannelPoller()
+    await telegram_poller.start()
+
     scheduler = AsyncIOScheduler()
     scheduler.add_job(poll_hh, "interval", seconds=settings.hh_poll_interval_seconds)
     if settings.linkedin_enabled:
         scheduler.add_job(poll_linkedin, "interval", seconds=settings.linkedin_poll_interval_seconds)
+    if telegram_poller.enabled:
+        scheduler.add_job(
+            telegram_poller.poll_once, "interval", seconds=settings.telegram_poll_interval_seconds
+        )
     scheduler.add_job(
         push_new_vacancies,
         "interval",
@@ -111,20 +118,15 @@ async def main() -> None:
     await poll_hh()
     if settings.linkedin_enabled:
         await poll_linkedin()
-
-    telegram_listener = TelegramChannelListener()
-    await telegram_listener.start()
-
-    tasks = [dispatcher.start_polling(bot)]
-    if telegram_listener.enabled:
-        tasks.append(telegram_listener.run_forever())
+    if telegram_poller.enabled:
+        await telegram_poller.poll_once()
 
     try:
-        await asyncio.gather(*tasks)
+        await dispatcher.start_polling(bot)
     finally:
         scheduler.shutdown(wait=False)
         await bot.session.close()
-        await telegram_listener.stop()
+        await telegram_poller.stop()
 
 
 if __name__ == "__main__":

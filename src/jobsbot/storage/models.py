@@ -13,6 +13,7 @@ class Source(SQLModel, table=True):
     enabled: bool = True
     poll_interval_seconds: int | None = None  # null for event-driven sources
     last_polled_at: datetime | None = None
+    last_message_id: int | None = None  # telegram_channel cursor for get_messages(min_id=...)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

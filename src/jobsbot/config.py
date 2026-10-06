@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     telegram_api_hash: str
     telegram_session_path: str = "data/telegram_user.session"
     telegram_channels: str = ""  # comma-separated channel usernames
+    telegram_poll_interval_seconds: int = 300
 
     hh_search_url: str = "https://hh.ru/search/vacancy"
     hh_poll_interval_seconds: int = 600

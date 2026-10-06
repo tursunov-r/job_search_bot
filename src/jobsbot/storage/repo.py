@@ -23,6 +23,17 @@ async def get_or_create_source(
     return source
 
 
+async def update_source_last_message_id(session: AsyncSession, source_id: int, message_id: int) -> None:
+    result = await session.exec(select(Source).where(Source.id == source_id))
+    source = result.first()
+    if source is None:
+        return
+    source.last_message_id = message_id
+    source.last_polled_at = datetime.now(timezone.utc)
+    session.add(source)
+    await session.commit()
+
+
 async def get_vacancy_by_fingerprint(session: AsyncSession, fingerprint: str) -> Vacancy | None:
     result = await session.exec(select(Vacancy).where(Vacancy.fingerprint == fingerprint))
     return result.first()

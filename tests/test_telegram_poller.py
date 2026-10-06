@@ -1,4 +1,4 @@
-from jobsbot.ingestion.telegram_listener import build_message_url, parse_message_text
+from jobsbot.ingestion.telegram_poller import build_message_url, parse_message_text
 
 
 def test_parse_message_basic():
