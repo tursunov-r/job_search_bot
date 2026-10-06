@@ -28,6 +28,7 @@ LANGUAGES: dict[str, Language] = {
         ),
         Language("go", "Go", "golang", ("golang", "go-разработчик", "go developer")),
         Language("java", "Java", "java", ("java",)),
+        Language("csharp", "C#/.NET", "c#", ("c#", ".net", "dotnet", "asp.net")),
     )
 }
 

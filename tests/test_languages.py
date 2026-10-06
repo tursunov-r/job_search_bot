@@ -27,3 +27,9 @@ def test_detects_go_via_golang_not_bare_go():
 def test_detects_java_without_matching_inside_javascript():
     assert detect_languages("Java Developer", "") == ["java"]
     assert detect_languages("JavaScript Developer", "") == ["javascript"]
+
+
+def test_detects_csharp_via_hash_and_dotnet_variants():
+    assert detect_languages("C# Developer", "") == ["csharp"]
+    assert detect_languages(".NET Developer", "") == ["csharp"]
+    assert detect_languages("ASP.NET Backend Developer", "") == ["csharp"]
