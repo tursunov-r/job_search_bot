@@ -22,3 +22,8 @@ def test_detects_javascript_without_colliding_with_java():
 def test_detects_go_via_golang_not_bare_go():
     assert detect_languages("Golang Developer", "") == ["go"]
     assert detect_languages("Let's go get coffee", "") == []
+
+
+def test_detects_java_without_matching_inside_javascript():
+    assert detect_languages("Java Developer", "") == ["java"]
+    assert detect_languages("JavaScript Developer", "") == ["javascript"]

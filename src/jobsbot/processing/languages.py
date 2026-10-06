@@ -27,6 +27,7 @@ LANGUAGES: dict[str, Language] = {
             ("javascript", "typescript", "node.js", "nodejs"),
         ),
         Language("go", "Go", "golang", ("golang", "go-разработчик", "go developer")),
+        Language("java", "Java", "java", ("java",)),
     )
 }
 
