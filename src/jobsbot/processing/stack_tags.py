@@ -39,6 +39,8 @@ STACK_TAGS: dict[str, StackTag] = {
         StackTag("laravel", "Laravel", ("laravel",), language="php"),
         StackTag("symfony", "Symfony", ("symfony",), language="php"),
         StackTag("wordpress", "WordPress", ("wordpress",), language="php"),
+        StackTag("rails", "Rails", ("rails", "ruby on rails"), language="ruby"),
+        StackTag("sinatra", "Sinatra", ("sinatra",), language="ruby"),
         StackTag("postgresql", "PostgreSQL", ("postgresql", "postgres")),
         StackTag("mysql", "MySQL", ("mysql",)),
         StackTag("mongodb", "MongoDB", ("mongodb", "mongo")),

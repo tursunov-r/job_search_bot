@@ -30,6 +30,7 @@ LANGUAGES: dict[str, Language] = {
         Language("java", "Java", "java", ("java",)),
         Language("csharp", "C#/.NET", "c#", ("c#", ".net", "dotnet", "asp.net")),
         Language("php", "PHP", "php", ("php",)),
+        Language("ruby", "Ruby", "ruby", ("ruby", "ruby on rails")),
     )
 }
 

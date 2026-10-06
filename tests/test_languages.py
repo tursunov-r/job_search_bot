@@ -37,3 +37,7 @@ def test_detects_csharp_via_hash_and_dotnet_variants():
 
 def test_detects_php():
     assert detect_languages("PHP Developer", "") == ["php"]
+
+
+def test_detects_ruby():
+    assert detect_languages("Ruby on Rails Developer", "") == ["ruby"]
