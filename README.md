@@ -19,21 +19,24 @@ Telegram-бот, который собирает вакансии разрабо
 git clone <repo> && cd project_alpha
 cp .env.example .env
 # заполнить .env (см. таблицу переменных ниже) — как минимум BOT_TOKEN,
-# TELEGRAM_API_ID/HASH, DB_PASSWORD, SUPER_ADMIN_TELEGRAM_USER_ID
+# DB_PASSWORD, SUPER_ADMIN_TELEGRAM_USER_ID
 ```
 
-Первый запуск — **обязательно в интерактивном режиме**, не `-d`: Telethon при первом старте попросит номер телефона и код из Telegram, чтобы создать `.session`-файл (это отдельный user-аккаунт для чтения каналов, не сам бот).
+```bash
+docker compose up -d
+```
+
+Этого достаточно для парсинга **hh.ru** (и опционально LinkedIn) — Telegram-каналы без `TELEGRAM_API_ID`/`TELEGRAM_API_HASH` в `.env` просто отключены (см. ниже), никакого дополнительного шага логина не нужно.
+
+### Если нужен и парсинг Telegram-каналов
+
+Заполни `TELEGRAM_API_ID`/`TELEGRAM_API_HASH` в `.env` (как получить — см. [my.telegram.org/apps](https://my.telegram.org/apps)). Первый запуск после этого — **обязательно в интерактивном режиме**, не `-d`: Telethon попросит номер телефона и код из Telegram, чтобы создать `.session`-файл (это отдельный user-аккаунт для чтения каналов, не сам бот):
 
 ```bash
 docker compose run --rm bot python -m jobsbot.main
 # ввести номер телефона, затем код из Telegram
 # после того как в логах пошёл обычный поллинг — Ctrl+C
-```
-
-Дальше обычный запуск в фоне — `.session`-файл сохранён в `./data` (volume), повторного логина не требуется:
-
-```bash
-docker compose up -d
+docker compose up -d   # дальше обычный запуск в фоне, .session сохранён в ./data
 ```
 
 Проверить, что всё поднялось:
@@ -66,8 +69,8 @@ PYTHONPATH=src pytest tests/ -v
 | Переменная | Обязательна | По умолчанию | Что это |
 |---|---|---|---|
 | `BOT_TOKEN` | да | — | Токен Telegram-бота от [@BotFather](https://t.me/BotFather) |
-| `TELEGRAM_API_ID` | да | — | API ID с [my.telegram.org](https://my.telegram.org) — для Telethon (чтение каналов от имени user-аккаунта, не бота) |
-| `TELEGRAM_API_HASH` | да | — | API Hash оттуда же |
+| `TELEGRAM_API_ID` | нет | — (отключено) | API ID с [my.telegram.org/apps](https://my.telegram.org/apps) — для Telethon (чтение каналов от имени user-аккаунта, не бота). Пустое — Telegram-парсинг просто выключен, hh.ru/LinkedIn работают независимо |
+| `TELEGRAM_API_HASH` | нет | — (отключено) | API Hash оттуда же — должен быть задан вместе с `TELEGRAM_API_ID`, иначе Telegram-парсинг не включится |
 | `TELEGRAM_SESSION_PATH` | нет | `data/telegram_user.session` | Путь к файлу Telethon-сессии. В Docker это должно быть внутри примонтированного `./data`, иначе сессия потеряется при пересборке контейнера |
 | `TELEGRAM_POLL_INTERVAL_SECONDS` | нет | `300` | Как часто (сек) опрашивать Telegram-каналы на новые сообщения |
 | `HH_SEARCH_URL` | нет | `https://hh.ru/search/vacancy` | База URL для парсинга поиска hh.ru (менять не нужно, если hh.ru не переедет) |

@@ -5,8 +5,12 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     bot_token: str
-    telegram_api_id: int
-    telegram_api_hash: str
+
+    # Optional — Telegram channel parsing (Telethon) is entirely disabled
+    # until both are set. Needs a personal Telegram account's API
+    # credentials from my.telegram.org, not the bot's own token.
+    telegram_api_id: int | None = None
+    telegram_api_hash: str | None = None
     telegram_session_path: str = "data/telegram_user.session"
     telegram_poll_interval_seconds: int = 300
 
@@ -26,6 +30,10 @@ class Settings(BaseSettings):
     db_password: str
 
     super_admin_telegram_user_id: int
+
+    @property
+    def telegram_enabled(self) -> bool:
+        return self.telegram_api_id is not None and bool(self.telegram_api_hash)
 
     @property
     def get_db_url(self) -> str:

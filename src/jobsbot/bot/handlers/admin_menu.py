@@ -14,6 +14,7 @@ from aiogram.types import (
 )
 
 from jobsbot.bot.permissions import PERMISSIONS, get_permissions, has_permission, is_super_admin
+from jobsbot.config import settings
 from jobsbot.storage.db import async_session
 from jobsbot.storage.repo import (
     add_staff_member,
@@ -46,7 +47,7 @@ class AdminFSM(StatesGroup):
 async def build_admin_keyboard(user_id: int) -> ReplyKeyboardMarkup | None:
     perms = await get_permissions(user_id)
     rows: list[list[KeyboardButton]] = []
-    if "manage_channels" in perms:
+    if "manage_channels" in perms and settings.telegram_enabled:
         rows.append([KeyboardButton(text=BTN_CHANNELS)])
     if "block_users" in perms:
         rows.append([KeyboardButton(text=BTN_USERS)])
@@ -89,6 +90,11 @@ async def _show_channels(message: Message) -> None:
 @router.message(F.text == BTN_CHANNELS)
 async def handle_channels_button(message: Message) -> None:
     if message.from_user is None or not await has_permission(message.from_user.id, "manage_channels"):
+        return
+    if not settings.telegram_enabled:
+        await message.answer(
+            "Telegram-парсинг отключён (нет TELEGRAM_API_ID/TELEGRAM_API_HASH в .env)."
+        )
         return
     await _show_channels(message)
 
