@@ -8,6 +8,7 @@ Telegram-бот, который собирает вакансии разрабо
 
 - [`docs/stack.md`](docs/stack.md) — на чём написан сам бот (язык, библиотеки, БД).
 - [`docs/sources.md`](docs/sources.md) — какие источники вакансий парсятся и как.
+- [`docs/languages-and-stacks.md`](docs/languages-and-stacks.md) — полная таблица языков и тегов стека, которые пользователь выбирает в `/language`/`/stack`.
 - [`docs/admin.md`](docs/admin.md) — как пользоваться админ-меню (`/admin`), права, добавление сотрудников и каналов.
 
 ## Быстрый старт (Docker)
