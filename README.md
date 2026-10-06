@@ -46,6 +46,30 @@ docker compose ps                 # оба сервиса должны быть 
 docker compose logs -f bot        # живые логи поллинга
 ```
 
+### Перезапуск / обновление
+
+Просто перечитать `.env` (без пересборки — если менял только переменные окружения):
+
+```bash
+docker compose restart bot
+```
+
+После `git pull` с новым кодом — пересобрать образ и пересоздать контейнер:
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+Если нужно руки полностью пересоздать контейнеры (например, что-то зависло):
+
+```bash
+docker compose down
+docker compose up -d
+```
+
+`postgres` при этом не трогается — данные в volume `pgdata` сохраняются; `down -v` вместо `down` **удалит и данные БД**, так делать не нужно без явной необходимости всё стереть.
+
 ## Локальный запуск без Docker (для разработки)
 
 Нужен Python 3.11+ и запущенный где-то Postgres (например, `docker run -d -e POSTGRES_PASSWORD=... -p 5432:5432 postgres:16-alpine`).
