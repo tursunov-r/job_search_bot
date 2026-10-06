@@ -68,6 +68,22 @@ class VacancyDelivery(SQLModel, table=True):
     delivered_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class StaffMember(SQLModel, table=True):
+    """Staff added by the super admin via the bot, with per-action
+    permissions (see bot/permissions.py). The super admin itself isn't a
+    row here — it's a single hardcoded telegram_user_id from .env."""
+
+    __tablename__ = "staff_members"
+
+    id: int | None = Field(default=None, primary_key=True)
+    telegram_user_id: int = Field(index=True, unique=True)
+    username: str | None = None
+    permissions: str = Field(default="[]")  # JSON array of bot/permissions.py keys
+    added_by_telegram_user_id: int
+    added_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    status: str = "active"  # 'active', 'removed'
+
+
 class AdCampaign(SQLModel, table=True):
     __tablename__ = "ad_campaigns"
 

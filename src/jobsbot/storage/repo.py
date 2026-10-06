@@ -4,7 +4,15 @@ from datetime import datetime, timedelta, timezone
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from jobsbot.storage.models import AdCampaign, AdImpression, Source, Subscriber, Vacancy, VacancyDelivery
+from jobsbot.storage.models import (
+    AdCampaign,
+    AdImpression,
+    Source,
+    StaffMember,
+    Subscriber,
+    Vacancy,
+    VacancyDelivery,
+)
 
 
 async def get_or_create_source(
@@ -21,6 +29,48 @@ async def get_or_create_source(
     await session.commit()
     await session.refresh(source)
     return source
+
+
+async def add_telegram_channel(session: AsyncSession, identifier: str) -> Source:
+    source = await get_or_create_source(session, "telegram_channel", identifier, identifier)
+    if not source.enabled:
+        source.enabled = True
+        session.add(source)
+        await session.commit()
+        await session.refresh(source)
+    return source
+
+
+async def remove_telegram_channel(session: AsyncSession, identifier: str) -> bool:
+    result = await session.exec(
+        select(Source).where(Source.type == "telegram_channel", Source.identifier == identifier)
+    )
+    source = result.first()
+    if source is None or not source.enabled:
+        return False
+    source.enabled = False
+    session.add(source)
+    await session.commit()
+    return True
+
+
+async def list_telegram_channels(session: AsyncSession) -> list[Source]:
+    result = await session.exec(
+        select(Source).where(Source.type == "telegram_channel").order_by(Source.id)
+    )
+    return list(result.all())
+
+
+async def get_source_by_id(session: AsyncSession, source_id: int) -> Source | None:
+    result = await session.exec(select(Source).where(Source.id == source_id))
+    return result.first()
+
+
+async def get_enabled_telegram_channel_identifiers(session: AsyncSession) -> list[str]:
+    result = await session.exec(
+        select(Source.identifier).where(Source.type == "telegram_channel", Source.enabled == True)  # noqa: E712
+    )
+    return list(result.all())
 
 
 async def update_source_last_message_id(session: AsyncSession, source_id: int, message_id: int) -> None:
@@ -246,3 +296,84 @@ async def get_last_impression_sent_at(session: AsyncSession, campaign_id: int) -
         .limit(1)
     )
     return result.first()
+
+
+async def get_staff_member(session: AsyncSession, telegram_user_id: int) -> StaffMember | None:
+    result = await session.exec(
+        select(StaffMember).where(StaffMember.telegram_user_id == telegram_user_id)
+    )
+    return result.first()
+
+
+async def list_staff_members(session: AsyncSession) -> list[StaffMember]:
+    result = await session.exec(select(StaffMember).order_by(StaffMember.id))
+    return list(result.all())
+
+
+async def add_staff_member(
+    session: AsyncSession,
+    telegram_user_id: int,
+    username: str | None,
+    permissions: list[str],
+    added_by_telegram_user_id: int,
+) -> StaffMember:
+    """Upsert: if this person was staff before and got removed, reactivate
+    them with the new permission set instead of erroring on the unique
+    constraint."""
+    existing = await get_staff_member(session, telegram_user_id)
+    if existing:
+        existing.username = username
+        existing.permissions = json.dumps(sorted(set(permissions)))
+        existing.added_by_telegram_user_id = added_by_telegram_user_id
+        existing.status = "active"
+        session.add(existing)
+        await session.commit()
+        await session.refresh(existing)
+        return existing
+
+    staff = StaffMember(
+        telegram_user_id=telegram_user_id,
+        username=username,
+        permissions=json.dumps(sorted(set(permissions))),
+        added_by_telegram_user_id=added_by_telegram_user_id,
+    )
+    session.add(staff)
+    await session.commit()
+    await session.refresh(staff)
+    return staff
+
+
+async def remove_staff_member(session: AsyncSession, staff_id: int) -> StaffMember | None:
+    result = await session.exec(select(StaffMember).where(StaffMember.id == staff_id))
+    staff = result.first()
+    if staff is None:
+        return None
+    staff.status = "removed"
+    session.add(staff)
+    await session.commit()
+    await session.refresh(staff)
+    return staff
+
+
+async def _set_subscriber_status_by_telegram_id(
+    session: AsyncSession, telegram_user_id: int, status: str
+) -> Subscriber | None:
+    result = await session.exec(
+        select(Subscriber).where(Subscriber.telegram_user_id == telegram_user_id)
+    )
+    subscriber = result.first()
+    if subscriber is None:
+        return None
+    subscriber.status = status
+    session.add(subscriber)
+    await session.commit()
+    await session.refresh(subscriber)
+    return subscriber
+
+
+async def block_subscriber_by_telegram_id(session: AsyncSession, telegram_user_id: int) -> Subscriber | None:
+    return await _set_subscriber_status_by_telegram_id(session, telegram_user_id, "blocked")
+
+
+async def unblock_subscriber_by_telegram_id(session: AsyncSession, telegram_user_id: int) -> Subscriber | None:
+    return await _set_subscriber_status_by_telegram_id(session, telegram_user_id, "active")
