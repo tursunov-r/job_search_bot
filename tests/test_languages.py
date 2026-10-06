@@ -12,3 +12,8 @@ def test_no_match_returns_empty_list():
 def test_description_requires_two_matches():
     assert detect_languages("Backend Developer", "Будет плюсом знание python") == []
     assert detect_languages("Backend Developer", "Пишем на python, местами питон-скрипты") == ["python"]
+
+
+def test_detects_javascript_without_colliding_with_java():
+    assert detect_languages("JavaScript Developer", "") == ["javascript"]
+    assert detect_languages("TypeScript Developer", "") == ["javascript"]

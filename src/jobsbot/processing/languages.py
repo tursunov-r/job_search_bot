@@ -20,6 +20,12 @@ LANGUAGES: dict[str, Language] = {
     lang.key: lang
     for lang in (
         Language("python", "Python", "python", ("python", "питон", "пайтон")),
+        Language(
+            "javascript",
+            "JavaScript/TS",
+            "javascript",
+            ("javascript", "typescript", "node.js", "nodejs"),
+        ),
     )
 }
 
