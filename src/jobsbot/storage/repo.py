@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from jobsbot.storage.models import AdCampaign, AdImpression, Source, Subscriber, Vacancy
+from jobsbot.storage.models import AdCampaign, AdImpression, Source, Subscriber, Vacancy, VacancyDelivery
 
 
 async def get_or_create_source(
@@ -94,6 +94,45 @@ async def mark_subscriber_cursor(session: AsyncSession, subscriber: Subscriber, 
     subscriber.last_vacancy_sent_id = vacancy_id
     session.add(subscriber)
     await session.commit()
+
+
+async def record_delivery(session: AsyncSession, subscriber_id: int, vacancy_id: int) -> None:
+    session.add(VacancyDelivery(subscriber_id=subscriber_id, vacancy_id=vacancy_id))
+    await session.commit()
+
+
+async def get_delivered_vacancy_ids(
+    session: AsyncSession, subscriber_id: int, vacancy_ids: list[int]
+) -> set[int]:
+    if not vacancy_ids:
+        return set()
+    result = await session.exec(
+        select(VacancyDelivery.vacancy_id).where(
+            VacancyDelivery.subscriber_id == subscriber_id,
+            VacancyDelivery.vacancy_id.in_(vacancy_ids),
+        )
+    )
+    return set(result.all())
+
+
+async def get_undelivered_recent_vacancies(
+    session: AsyncSession, subscriber_id: int, days: int = 7, limit: int = 50
+) -> list[Vacancy]:
+    """For re-scanning after a /stack or /language change: recent vacancies
+    this subscriber hasn't been sent yet, regardless of where their push
+    cursor currently sits (it may have already moved past some of these
+    because they didn't match the *old* filter)."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    delivered_subquery = select(VacancyDelivery.vacancy_id).where(
+        VacancyDelivery.subscriber_id == subscriber_id
+    )
+    result = await session.exec(
+        select(Vacancy)
+        .where(Vacancy.first_seen_at >= cutoff, Vacancy.id.not_in(delivered_subquery))
+        .order_by(Vacancy.id)
+        .limit(limit)
+    )
+    return list(result.all())
 
 
 async def update_subscriber_skills(session: AsyncSession, subscriber: Subscriber, skills: list[str]) -> Subscriber:

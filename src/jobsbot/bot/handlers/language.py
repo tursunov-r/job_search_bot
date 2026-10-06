@@ -4,6 +4,7 @@ from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
+from jobsbot.bot.push import resend_matching_backlog
 from jobsbot.processing.languages import LANGUAGES
 from jobsbot.storage.db import async_session
 from jobsbot.storage.repo import get_or_create_subscriber, update_subscriber_languages
@@ -78,6 +79,7 @@ async def handle_language_callback(callback: CallbackQuery) -> None:
         )
         selected = set(_json_list(subscriber.languages))
 
+        selection_changed = False
         if action == "toggle":
             key = parts[2]
             if key in selected:
@@ -85,8 +87,10 @@ async def handle_language_callback(callback: CallbackQuery) -> None:
             else:
                 selected.add(key)
             subscriber = await update_subscriber_languages(session, subscriber, list(selected))
+            selection_changed = True
         elif action == "reset":
             subscriber = await update_subscriber_languages(session, subscriber, [])
+            selection_changed = True
 
         final_selected = _json_list(subscriber.languages)
 
@@ -96,4 +100,9 @@ async def handle_language_callback(callback: CallbackQuery) -> None:
         return
 
     await callback.message.edit_reply_markup(reply_markup=build_language_keyboard(final_selected))
-    await callback.answer()
+
+    if selection_changed:
+        sent = await resend_matching_backlog(callback.bot, subscriber)
+        await callback.answer(f"Нашёл {sent} подходящих вакансий за неделю" if sent else None)
+    else:
+        await callback.answer()

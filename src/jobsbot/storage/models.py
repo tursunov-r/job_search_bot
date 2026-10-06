@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlmodel import SQLModel, Field
+from sqlmodel import SQLModel, Field, UniqueConstraint
 
 
 class Source(SQLModel, table=True):
@@ -50,6 +50,21 @@ class Subscriber(SQLModel, table=True):
     last_interaction_at: datetime | None = None
     skills: str = Field(default="[]")  # JSON array of stack_tags keys the subscriber selected
     languages: str = Field(default="[]")  # JSON array of languages.py keys the subscriber selected
+
+
+class VacancyDelivery(SQLModel, table=True):
+    """One row per vacancy actually delivered to a subscriber — lets us
+    safely re-scan old vacancies after a /stack or /language change without
+    re-sending ones already delivered (the cursor alone can't tell us that,
+    since it only tracks "considered", not "sent")."""
+
+    __tablename__ = "vacancy_deliveries"
+    __table_args__ = (UniqueConstraint("subscriber_id", "vacancy_id"),)
+
+    id: int | None = Field(default=None, primary_key=True)
+    subscriber_id: int = Field(foreign_key="subscribers.id", index=True)
+    vacancy_id: int = Field(foreign_key="vacancies.id", index=True)
+    delivered_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class AdCampaign(SQLModel, table=True):

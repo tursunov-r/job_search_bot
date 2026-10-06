@@ -9,8 +9,11 @@ from jobsbot.storage.db import async_session
 from jobsbot.storage.models import Subscriber, Vacancy
 from jobsbot.storage.repo import (
     get_active_subscribers,
+    get_delivered_vacancy_ids,
     get_pending_vacancies_for_subscriber,
+    get_undelivered_recent_vacancies,
     mark_subscriber_cursor,
+    record_delivery,
 )
 
 logger = logging.getLogger(__name__)
@@ -78,8 +81,17 @@ async def push_new_vacancies(bot: Bot) -> None:
             selected_languages = _json_list(subscriber.languages)
             selected_skills = _json_list(subscriber.skills)
             cursor_id = subscriber.last_vacancy_sent_id
+            delivered_ids = await get_delivered_vacancy_ids(
+                session, subscriber.id, [v.id for v in vacancies]
+            )
 
             for vacancy in vacancies:
+                if vacancy.id in delivered_ids:
+                    # Already sent via a /stack or /language re-scan before the
+                    # cursor walk reached it — don't send it twice.
+                    cursor_id = vacancy.id
+                    continue
+
                 if not _vacancy_matches(vacancy, selected_languages, selected_skills):
                     # Skipped on purpose (doesn't match the subscriber's filters) —
                     # still advance the cursor so it isn't re-checked every cycle.
@@ -88,6 +100,7 @@ async def push_new_vacancies(bot: Bot) -> None:
 
                 try:
                     await _deliver_vacancy(bot, subscriber.telegram_user_id, vacancy)
+                    await record_delivery(session, subscriber.id, vacancy.id)
                     cursor_id = vacancy.id
                 except TelegramForbiddenError:
                     subscriber.status = "blocked"
@@ -103,3 +116,37 @@ async def push_new_vacancies(bot: Bot) -> None:
 
             if cursor_id != subscriber.last_vacancy_sent_id:
                 await mark_subscriber_cursor(session, subscriber, cursor_id)
+
+
+async def resend_matching_backlog(bot: Bot, subscriber: Subscriber) -> int:
+    """Called right after a /stack or /language change: re-scan the last 7
+    days for vacancies this subscriber hasn't been sent yet that now match
+    their *current* filters — the normal cursor walk already moved past
+    anything that didn't match the *old* filter and won't reconsider it.
+    Returns how many were sent."""
+    async with async_session() as session:
+        candidates = await get_undelivered_recent_vacancies(session, subscriber.id)
+        selected_languages = _json_list(subscriber.languages)
+        selected_skills = _json_list(subscriber.skills)
+
+        sent = 0
+        for vacancy in candidates:
+            if not _vacancy_matches(vacancy, selected_languages, selected_skills):
+                continue
+            try:
+                await _deliver_vacancy(bot, subscriber.telegram_user_id, vacancy)
+                await record_delivery(session, subscriber.id, vacancy.id)
+                sent += 1
+            except TelegramForbiddenError:
+                subscriber.status = "blocked"
+                session.add(subscriber)
+                await session.commit()
+                break
+            except TelegramRetryAfter as exc:
+                logger.warning("Rate limited during resend, retry after %s", exc.retry_after)
+                break
+            except Exception:
+                logger.exception("Failed to resend vacancy %s to %s", vacancy.id, subscriber.telegram_user_id)
+                continue
+
+        return sent
