@@ -119,11 +119,22 @@ async def main() -> None:
     )
     scheduler.start()
 
-    await poll_hh()
+    # Run the first poll in the background instead of awaiting it here —
+    # on a fresh DB this can mean hundreds of new vacancies, each with its
+    # own delayed HH detail-page fetch, which took minutes. Blocking on
+    # that before start_polling() meant the bot didn't respond to any
+    # message (not even /start) until the whole thing finished.
+    background_tasks: set[asyncio.Task] = set()
+
+    def _track(task: asyncio.Task) -> None:
+        background_tasks.add(task)
+        task.add_done_callback(background_tasks.discard)
+
+    _track(asyncio.create_task(poll_hh()))
     if settings.linkedin_enabled:
-        await poll_linkedin()
+        _track(asyncio.create_task(poll_linkedin()))
     if telegram_poller is not None:
-        await telegram_poller.poll_once()
+        _track(asyncio.create_task(telegram_poller.poll_once()))
 
     try:
         await dispatcher.start_polling(bot)
