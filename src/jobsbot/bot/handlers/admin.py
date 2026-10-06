@@ -4,20 +4,20 @@ from aiogram.types import Message
 
 from jobsbot.ads.campaigns import activate_campaign, cancel_campaign, get_all_campaigns, new_draft_campaign
 from jobsbot.ads.scheduler import broadcast_campaign_now
-from jobsbot.config import settings
+from jobsbot.bot.permissions import has_permission
 from jobsbot.storage.repo import get_campaign
 from jobsbot.storage.db import async_session
 
 router = Router()
 
 
-def _is_admin(message: Message) -> bool:
-    return message.from_user is not None and message.from_user.id in settings.admin_ids
+async def _can_manage_ads(message: Message) -> bool:
+    return message.from_user is not None and await has_permission(message.from_user.id, "manage_ads")
 
 
 @router.message(Command("newad"))
 async def handle_newad(message: Message) -> None:
-    if not _is_admin(message):
+    if not await _can_manage_ads(message):
         return
     payload = message.text.split(maxsplit=1)[1] if message.text and " " in message.text else ""
     if "|" not in payload:
@@ -30,7 +30,7 @@ async def handle_newad(message: Message) -> None:
 
 @router.message(Command("ads"))
 async def handle_list_ads(message: Message) -> None:
-    if not _is_admin(message):
+    if not await _can_manage_ads(message):
         return
     campaigns = await get_all_campaigns()
     if not campaigns:
@@ -42,7 +42,7 @@ async def handle_list_ads(message: Message) -> None:
 
 @router.message(Command("activatead"))
 async def handle_activate_ad(message: Message) -> None:
-    if not _is_admin(message):
+    if not await _can_manage_ads(message):
         return
     campaign_id = _parse_id_arg(message.text)
     if campaign_id is None:
@@ -54,7 +54,7 @@ async def handle_activate_ad(message: Message) -> None:
 
 @router.message(Command("canceladc"))
 async def handle_cancel_ad(message: Message) -> None:
-    if not _is_admin(message):
+    if not await _can_manage_ads(message):
         return
     campaign_id = _parse_id_arg(message.text)
     if campaign_id is None:
@@ -66,7 +66,7 @@ async def handle_cancel_ad(message: Message) -> None:
 
 @router.message(Command("broadcastad"))
 async def handle_broadcast_now(message: Message) -> None:
-    if not _is_admin(message):
+    if not await _can_manage_ads(message):
         return
     campaign_id = _parse_id_arg(message.text)
     if campaign_id is None:
