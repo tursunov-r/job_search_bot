@@ -97,10 +97,9 @@ async def main() -> None:
     scheduler.add_job(poll_hh, "interval", seconds=settings.hh_poll_interval_seconds)
     if settings.linkedin_enabled:
         scheduler.add_job(poll_linkedin, "interval", seconds=settings.linkedin_poll_interval_seconds)
-    if telegram_poller.enabled:
-        scheduler.add_job(
-            telegram_poller.poll_once, "interval", seconds=settings.telegram_poll_interval_seconds
-        )
+    scheduler.add_job(
+        telegram_poller.poll_once, "interval", seconds=settings.telegram_poll_interval_seconds
+    )
     scheduler.add_job(
         push_new_vacancies,
         "interval",
@@ -118,8 +117,7 @@ async def main() -> None:
     await poll_hh()
     if settings.linkedin_enabled:
         await poll_linkedin()
-    if telegram_poller.enabled:
-        await telegram_poller.poll_once()
+    await telegram_poller.poll_once()
 
     try:
         await dispatcher.start_polling(bot)
