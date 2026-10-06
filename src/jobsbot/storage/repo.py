@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -35,6 +35,19 @@ async def insert_vacancy(session: AsyncSession, vacancy: Vacancy) -> Vacancy:
     return vacancy
 
 
+async def get_cursor_for_new_subscriber(session: AsyncSession) -> int | None:
+    """A new subscriber should get the last week's vacancies first (oldest to
+    newest, via the normal push cursor), not the entire history. Returns the
+    id of the newest vacancy older than 7 days, so the push loop's `id >
+    cursor` naturally starts from there; None if there isn't one (everything
+    is within the last week already, so start from the very beginning)."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    result = await session.exec(
+        select(Vacancy.id).where(Vacancy.first_seen_at < cutoff).order_by(Vacancy.id.desc()).limit(1)
+    )
+    return result.first()
+
+
 async def get_or_create_subscriber(
     session: AsyncSession, telegram_user_id: int, username: str | None
 ) -> Subscriber:
@@ -49,7 +62,10 @@ async def get_or_create_subscriber(
         await session.commit()
         await session.refresh(subscriber)
         return subscriber
-    subscriber = Subscriber(telegram_user_id=telegram_user_id, username=username)
+    initial_cursor = await get_cursor_for_new_subscriber(session)
+    subscriber = Subscriber(
+        telegram_user_id=telegram_user_id, username=username, last_vacancy_sent_id=initial_cursor
+    )
     session.add(subscriber)
     await session.commit()
     await session.refresh(subscriber)
@@ -82,6 +98,16 @@ async def mark_subscriber_cursor(session: AsyncSession, subscriber: Subscriber, 
 
 async def update_subscriber_skills(session: AsyncSession, subscriber: Subscriber, skills: list[str]) -> Subscriber:
     subscriber.skills = json.dumps(sorted(set(skills)))
+    session.add(subscriber)
+    await session.commit()
+    await session.refresh(subscriber)
+    return subscriber
+
+
+async def update_subscriber_languages(
+    session: AsyncSession, subscriber: Subscriber, languages: list[str]
+) -> Subscriber:
+    subscriber.languages = json.dumps(sorted(set(languages)))
     session.add(subscriber)
     await session.commit()
     await session.refresh(subscriber)

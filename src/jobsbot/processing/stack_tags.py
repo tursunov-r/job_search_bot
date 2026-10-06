@@ -9,16 +9,17 @@ class StackTag:
     key: str
     label: str
     keywords: tuple[str, ...]
+    language: str | None = None  # None = universal (DB/queue/infra), else a languages.py key
 
 
 STACK_TAGS: dict[str, StackTag] = {
     tag.key: tag
     for tag in (
-        StackTag("django", "Django", ("django",)),
-        StackTag("flask", "Flask", ("flask",)),
-        StackTag("fastapi", "FastAPI", ("fastapi",)),
-        StackTag("celery", "Celery", ("celery",)),
-        StackTag("pandas", "Pandas/NumPy", ("pandas", "numpy")),
+        StackTag("django", "Django", ("django",), language="python"),
+        StackTag("flask", "Flask", ("flask",), language="python"),
+        StackTag("fastapi", "FastAPI", ("fastapi",), language="python"),
+        StackTag("celery", "Celery", ("celery",), language="python"),
+        StackTag("pandas", "Pandas/NumPy", ("pandas", "numpy"), language="python"),
         StackTag("postgresql", "PostgreSQL", ("postgresql", "postgres")),
         StackTag("mysql", "MySQL", ("mysql",)),
         StackTag("mongodb", "MongoDB", ("mongodb", "mongo")),
@@ -29,15 +30,17 @@ STACK_TAGS: dict[str, StackTag] = {
     )
 }
 
-# Layout for the inline keyboard: rows of tag keys.
-STACK_TAG_ROWS: list[list[str]] = [
-    ["django", "flask"],
-    ["fastapi", "celery"],
-    ["pandas", "postgresql"],
-    ["mysql", "mongodb"],
-    ["redis", "rabbitmq"],
-    ["kafka", "docker"],
-]
+UNIVERSAL_TAG_KEYS: list[str] = [tag.key for tag in STACK_TAGS.values() if tag.language is None]
+
+
+def visible_tag_keys(selected_languages: list[str]) -> list[str]:
+    """Which tags to show in /stack: language-specific tags for each selected
+    language (in registration order), then the universal infra tags."""
+    language_specific = [
+        tag.key for tag in STACK_TAGS.values() if tag.language is not None and tag.language in selected_languages
+    ]
+    return language_specific + UNIVERSAL_TAG_KEYS
+
 
 _WORD_RE_CACHE: dict[str, re.Pattern] = {}
 

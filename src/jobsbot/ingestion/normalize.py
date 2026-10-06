@@ -23,4 +23,6 @@ def clean_raw_vacancy(raw: RawVacancy) -> RawVacancy:
         salary_text=_clean(raw.salary_text),
         location=_clean(raw.location),
         posted_at=raw.posted_at,
+        source_chat_id=raw.source_chat_id,
+        source_message_id=raw.source_message_id,
     )

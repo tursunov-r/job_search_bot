@@ -11,3 +11,5 @@ class RawVacancy:
     salary_text: str | None = None
     location: str | None = None
     posted_at: datetime | None = None
+    source_chat_id: int | None = None  # set by telegram_listener, for forwarding the original message
+    source_message_id: int | None = None

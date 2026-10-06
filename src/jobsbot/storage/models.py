@@ -32,6 +32,9 @@ class Vacancy(SQLModel, table=True):
     posted_at: datetime | None = Field(default=None, index=True)
     first_seen_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     is_python_relevant: bool = True
+    languages: str = Field(default="[]")  # JSON array of languages.py keys detected/assigned
+    source_chat_id: int | None = None  # Telegram chat id, for forwarding the original message
+    source_message_id: int | None = None  # Telegram message id, for forwarding the original message
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -46,6 +49,7 @@ class Subscriber(SQLModel, table=True):
     last_vacancy_sent_id: int | None = Field(default=None, foreign_key="vacancies.id")
     last_interaction_at: datetime | None = None
     skills: str = Field(default="[]")  # JSON array of stack_tags keys the subscriber selected
+    languages: str = Field(default="[]")  # JSON array of languages.py keys the subscriber selected
 
 
 class AdCampaign(SQLModel, table=True):

@@ -10,6 +10,7 @@ from jobsbot.bot.push import push_new_vacancies
 from jobsbot.config import settings
 from jobsbot.ingestion import hh_adapter, linkedin_adapter
 from jobsbot.ingestion.telegram_listener import TelegramChannelListener
+from jobsbot.processing.languages import LANGUAGES
 from jobsbot.processing.pipeline import ingest
 from jobsbot.storage.db import async_session, init_db
 from jobsbot.storage.repo import get_or_create_source, update_vacancy_description
@@ -18,36 +19,51 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-async def poll_hh() -> None:
+async def poll_hh_language(language_key: str) -> list:
+    lang = LANGUAGES[language_key]
     try:
-        raw_vacancies = await hh_adapter.fetch_vacancies()
+        raw_vacancies = await hh_adapter.fetch_vacancies(lang.hh_search_term)
     except Exception:
-        logger.exception("HH polling failed")
-        return
+        logger.exception("HH polling failed for language %s", language_key)
+        return []
 
     new_vacancies = []
     async with async_session() as session:
-        source = await get_or_create_source(session, "hh", "hh_search", "hh.ru search")
+        source = await get_or_create_source(
+            session, "hh", f"hh_search_{language_key}", f"hh.ru search ({lang.label})"
+        )
         for raw in raw_vacancies:
-            vacancy = await ingest(session, raw, source.id)
+            vacancy = await ingest(session, raw, source.id, language_hint=language_key)
             if vacancy:
                 new_vacancies.append(vacancy)
-        logger.info("HH poll: fetched %d, inserted %d new", len(raw_vacancies), len(new_vacancies))
+    logger.info(
+        "HH poll [%s]: fetched %d, inserted %d new", language_key, len(raw_vacancies), len(new_vacancies)
+    )
+    return new_vacancies
 
-    if not new_vacancies:
+
+async def poll_hh() -> None:
+    all_new_vacancies = []
+    language_keys = list(LANGUAGES.keys())
+    for i, language_key in enumerate(language_keys):
+        all_new_vacancies.extend(await poll_hh_language(language_key))
+        if i < len(language_keys) - 1:
+            await asyncio.sleep(hh_adapter.PAGE_DELAY_SECONDS)
+
+    if not all_new_vacancies:
         return
 
     async with httpx.AsyncClient(
         headers={"User-Agent": hh_adapter.USER_AGENT}, timeout=15.0, follow_redirects=True
     ) as client:
-        for i, vacancy in enumerate(new_vacancies):
+        for i, vacancy in enumerate(all_new_vacancies):
             if not vacancy.url:
                 continue
             description = await hh_adapter.fetch_description(client, vacancy.url)
             if description:
                 async with async_session() as session:
                     await update_vacancy_description(session, vacancy.id, description)
-            if i < len(new_vacancies) - 1:
+            if i < len(all_new_vacancies) - 1:
                 await asyncio.sleep(hh_adapter.DETAIL_FETCH_DELAY_SECONDS)
 
 
@@ -62,7 +78,7 @@ async def poll_linkedin() -> None:
         source = await get_or_create_source(session, "linkedin", "linkedin_search", "LinkedIn search")
         inserted = 0
         for raw in raw_vacancies:
-            vacancy = await ingest(session, raw, source.id)
+            vacancy = await ingest(session, raw, source.id, language_hint="python")
             if vacancy:
                 inserted += 1
         logger.info("LinkedIn poll: fetched %d, inserted %d new", len(raw_vacancies), inserted)

@@ -1,4 +1,4 @@
-from jobsbot.processing.stack_tags import matches_stack
+from jobsbot.processing.stack_tags import UNIVERSAL_TAG_KEYS, matches_stack, visible_tag_keys
 
 
 def test_no_selection_matches_everything():
@@ -23,3 +23,15 @@ def test_match_in_title_without_description():
 
 def test_unknown_tag_key_is_ignored_safely():
     assert not matches_stack("Python Developer", "обычный текст", ["not_a_real_tag"])
+
+
+def test_visible_tags_with_no_language_is_just_universal():
+    assert visible_tag_keys([]) == UNIVERSAL_TAG_KEYS
+
+
+def test_visible_tags_includes_python_tags_when_python_selected():
+    tags = visible_tag_keys(["python"])
+    assert "django" in tags
+    assert "fastapi" in tags
+    for universal in UNIVERSAL_TAG_KEYS:
+        assert universal in tags

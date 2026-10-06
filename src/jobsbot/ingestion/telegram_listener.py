@@ -27,7 +27,7 @@ _LEADING_NOISE_RE = re.compile(r"^[^\w]+", re.UNICODE)
 
 def parse_message_text(text: str | None) -> RawVacancy | None:
     """First non-empty line (minus leading emoji/bullets) becomes the title,
-    the full message becomes the description for keyword filtering."""
+    the full message becomes the description for language detection."""
     if not text or not text.strip():
         return None
 
@@ -80,6 +80,8 @@ class TelegramChannelListener:
         username = getattr(chat, "username", None)
         raw.url = build_message_url(username, event.message.id)
         raw.posted_at = event.message.date
+        raw.source_chat_id = event.chat_id
+        raw.source_message_id = event.message.id
 
         async with async_session() as session:
             source = await get_or_create_source(

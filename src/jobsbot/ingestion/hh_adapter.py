@@ -10,7 +10,7 @@ The search-results page does not render a job description snippet (HH moved
 that into the per-vacancy detail page), so the listing parser leaves
 ``description`` as ``None`` — fetching it for every search result would be
 too heavy for a polling MVP. Instead, ``fetch_description`` is called once
-per vacancy, but only for vacancies that already passed the keyword filter
+per vacancy, but only for vacancies that already passed the relevance filter
 and dedup and got inserted as genuinely new rows (see ``main.py::poll_hh``),
 so the extra per-item request only happens for real new postings, not the
 whole search result set.
@@ -33,7 +33,6 @@ USER_AGENT = (
     "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
 )
 
-SEARCH_QUERY = "python"
 AREA_RUSSIA = "113"
 MAX_PAGES = 2
 PAGE_DELAY_SECONDS = 2.0
@@ -98,7 +97,7 @@ async def fetch_description(client: httpx.AsyncClient, url: str) -> str | None:
     return _parse_description(response.text)
 
 
-async def fetch_vacancies() -> list[RawVacancy]:
+async def fetch_vacancies(search_term: str) -> list[RawVacancy]:
     results: list[RawVacancy] = []
     async with httpx.AsyncClient(
         headers={"User-Agent": USER_AGENT}, timeout=15.0, follow_redirects=True
@@ -107,7 +106,7 @@ async def fetch_vacancies() -> list[RawVacancy]:
             try:
                 response = await client.get(
                     settings.hh_search_url,
-                    params={"text": SEARCH_QUERY, "area": AREA_RUSSIA, "page": page},
+                    params={"text": search_term, "area": AREA_RUSSIA, "page": page},
                 )
                 response.raise_for_status()
             except httpx.HTTPError as exc:

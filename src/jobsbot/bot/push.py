@@ -29,11 +29,42 @@ def format_vacancy(vacancy: Vacancy) -> str:
     return "\n".join(lines)
 
 
-def _subscriber_skills(subscriber: Subscriber) -> list[str]:
+def _json_list(value: str) -> list[str]:
     try:
-        return json.loads(subscriber.skills)
+        return json.loads(value)
     except (TypeError, ValueError):
         return []
+
+
+def _vacancy_matches(vacancy: Vacancy, selected_languages: list[str], selected_skills: list[str]) -> bool:
+    vacancy_languages = _json_list(vacancy.languages)
+    language_ok = not selected_languages or any(lang in selected_languages for lang in vacancy_languages)
+    stack_ok = matches_stack(vacancy.title, vacancy.description, selected_skills)
+    return language_ok and stack_ok
+
+
+async def _deliver_vacancy(bot: Bot, telegram_user_id: int, vacancy: Vacancy) -> None:
+    """Telegram-sourced vacancies are forwarded as the original message
+    (per product decision — no reformatting). HH/LinkedIn ones go through
+    our template since there's no original Telegram message to forward."""
+    if vacancy.source_chat_id and vacancy.source_message_id:
+        try:
+            await bot.forward_message(
+                telegram_user_id, from_chat_id=vacancy.source_chat_id, message_id=vacancy.source_message_id
+            )
+            return
+        except (TelegramForbiddenError, TelegramRetryAfter):
+            raise
+        except Exception:
+            # The bot itself isn't a member of the source channel (only the
+            # Telethon listener session is) — forwarding across accounts
+            # like that commonly fails. Fall back to plain text so the
+            # vacancy isn't silently lost.
+            logger.warning("Forward failed for vacancy %s, falling back to plain text", vacancy.id)
+            await bot.send_message(telegram_user_id, vacancy.description or vacancy.title)
+            return
+
+    await bot.send_message(telegram_user_id, format_vacancy(vacancy), parse_mode="HTML")
 
 
 async def push_new_vacancies(bot: Bot) -> None:
@@ -44,20 +75,19 @@ async def push_new_vacancies(bot: Bot) -> None:
             if not vacancies:
                 continue
 
-            selected_skills = _subscriber_skills(subscriber)
+            selected_languages = _json_list(subscriber.languages)
+            selected_skills = _json_list(subscriber.skills)
             cursor_id = subscriber.last_vacancy_sent_id
 
             for vacancy in vacancies:
-                if not matches_stack(vacancy.title, vacancy.description, selected_skills):
-                    # Skipped on purpose (doesn't match the subscriber's stack) —
+                if not _vacancy_matches(vacancy, selected_languages, selected_skills):
+                    # Skipped on purpose (doesn't match the subscriber's filters) —
                     # still advance the cursor so it isn't re-checked every cycle.
                     cursor_id = vacancy.id
                     continue
 
                 try:
-                    await bot.send_message(
-                        subscriber.telegram_user_id, format_vacancy(vacancy), parse_mode="HTML"
-                    )
+                    await _deliver_vacancy(bot, subscriber.telegram_user_id, vacancy)
                     cursor_id = vacancy.id
                 except TelegramForbiddenError:
                     subscriber.status = "blocked"
