@@ -11,7 +11,8 @@ async_session = async_sessionmaker(_engine, class_=AsyncSession, expire_on_commi
 
 
 async def init_db() -> None:
-    db_path = settings.database_url.split("///")[-1]
-    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    if settings.database_url.startswith("sqlite"):
+        db_path = settings.database_url.split("///")[-1]
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     async with _engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
