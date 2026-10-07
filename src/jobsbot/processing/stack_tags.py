@@ -55,8 +55,9 @@ UNIVERSAL_TAG_KEYS: list[str] = [tag.key for tag in STACK_TAGS.values() if tag.l
 
 
 def visible_tag_keys(selected_languages: list[str]) -> list[str]:
-    """Which tags to show in /stack: language-specific tags for each selected
-    language (in registration order), then the universal infra tags."""
+    """Which tags to show in the "Добавить стек" flow: language-specific tags
+    for each selected language (in registration order), then the universal
+    infra tags."""
     language_specific = [
         tag.key for tag in STACK_TAGS.values() if tag.language is not None and tag.language in selected_languages
     ]

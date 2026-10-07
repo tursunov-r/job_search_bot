@@ -8,12 +8,11 @@ def build_bot() -> Bot:
 
 
 def build_dispatcher() -> Dispatcher:
-    from jobsbot.bot.handlers import admin, admin_menu, language, settings as settings_handlers, start
+    from jobsbot.bot.handlers import admin, admin_menu, start, subscriber_menu
 
     dp = Dispatcher()
     dp.include_router(admin_menu.router)
     dp.include_router(admin.router)
-    dp.include_router(language.router)
-    dp.include_router(settings_handlers.router)
+    dp.include_router(subscriber_menu.router)
     dp.include_router(start.router)
     return dp

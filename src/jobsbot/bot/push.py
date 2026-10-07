@@ -87,7 +87,7 @@ async def push_new_vacancies(bot: Bot) -> None:
 
             for vacancy in vacancies:
                 if vacancy.id in delivered_ids:
-                    # Already sent via a /stack or /language re-scan before the
+                    # Already sent via a profile-change re-scan before the
                     # cursor walk reached it — don't send it twice.
                     cursor_id = vacancy.id
                     continue
@@ -119,9 +119,9 @@ async def push_new_vacancies(bot: Bot) -> None:
 
 
 async def resend_matching_backlog(bot: Bot, subscriber: Subscriber) -> int:
-    """Called right after a /stack or /language change: re-scan the last 7
-    days for vacancies this subscriber hasn't been sent yet that now match
-    their *current* filters — the normal cursor walk already moved past
+    """Called when the subscriber presses "Смотреть вакансии": re-scan the
+    last 7 days for vacancies this subscriber hasn't been sent yet that
+    match their *current* profile — the normal cursor walk already moved past
     anything that didn't match the *old* filter and won't reconsider it.
     Returns how many were sent."""
     async with async_session() as session:

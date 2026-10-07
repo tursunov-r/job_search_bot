@@ -55,7 +55,7 @@ class Subscriber(SQLModel, table=True):
 
 class VacancyDelivery(SQLModel, table=True):
     """One row per vacancy actually delivered to a subscriber — lets us
-    safely re-scan old vacancies after a /stack or /language change without
+    safely re-scan old vacancies after a profile change without
     re-sending ones already delivered (the cursor alone can't tell us that,
     since it only tracks "considered", not "sent")."""
 

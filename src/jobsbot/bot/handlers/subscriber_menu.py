@@ -1,0 +1,269 @@
+import json
+import logging
+
+from aiogram import F, Router
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    Message,
+    ReplyKeyboardMarkup,
+)
+
+from jobsbot.bot.push import resend_matching_backlog
+from jobsbot.processing.languages import LANGUAGES
+from jobsbot.processing.stack_tags import STACK_TAGS, visible_tag_keys
+from jobsbot.storage.db import async_session
+from jobsbot.storage.repo import (
+    get_or_create_subscriber,
+    pause_subscriber_by_telegram_id,
+    resume_subscriber_by_telegram_id,
+    update_subscriber_languages,
+    update_subscriber_skills,
+)
+
+logger = logging.getLogger(__name__)
+router = Router()
+
+BTN_ADD_STACK = "➕ Добавить стек"
+BTN_VIEW = "👀 Смотреть вакансии"
+BTN_STOP = "⏸ Остановить рассылку"
+
+CALLBACK_PREFIX = "addstack"
+
+
+class StackFSM(StatesGroup):
+    picking_tags = State()
+
+
+def build_menu_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=BTN_ADD_STACK)],
+            [KeyboardButton(text=BTN_VIEW), KeyboardButton(text=BTN_STOP)],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def _json_list(value: str) -> list[str]:
+    try:
+        return json.loads(value)
+    except (TypeError, ValueError):
+        return []
+
+
+async def _delete_quietly(message: Message) -> None:
+    try:
+        await message.delete()
+    except Exception:
+        logger.debug("Could not delete message %s (probably harmless)", message.message_id)
+
+
+def _build_language_keyboard(selected_languages: list[str]) -> InlineKeyboardMarkup:
+    rows = []
+    for lang in LANGUAGES.values():
+        checked = "✅ " if lang.key in selected_languages else ""
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{checked}{lang.label}", callback_data=f"{CALLBACK_PREFIX}:lang:{lang.key}"
+                )
+            ]
+        )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _build_tags_keyboard(chosen: list[str], tag_keys: list[str]) -> InlineKeyboardMarkup:
+    rows = []
+    for i in range(0, len(tag_keys), 2):
+        buttons = []
+        for key in tag_keys[i : i + 2]:
+            tag = STACK_TAGS[key]
+            checked = "✅" if key in chosen else "⬜"
+            buttons.append(
+                InlineKeyboardButton(
+                    text=f"{checked} {tag.label}", callback_data=f"{CALLBACK_PREFIX}:tag:toggle:{key}"
+                )
+            )
+        rows.append(buttons)
+    rows.append(
+        [
+            InlineKeyboardButton(text="⬅️ Назад", callback_data=f"{CALLBACK_PREFIX}:back"),
+            InlineKeyboardButton(text="✅ Применить", callback_data=f"{CALLBACK_PREFIX}:apply"),
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+LANGUAGE_PICKER_TEXT = "Выбери язык — дальше покажу фреймворки/БД для него:"
+
+
+@router.message(F.text == BTN_ADD_STACK)
+async def handle_add_stack_button(message: Message, state: FSMContext) -> None:
+    if message.from_user is None:
+        return
+    await _delete_quietly(message)
+    await state.clear()
+
+    async with async_session() as session:
+        subscriber = await get_or_create_subscriber(
+            session, telegram_user_id=message.from_user.id, username=message.from_user.username
+        )
+        selected_languages = _json_list(subscriber.languages)
+
+    await message.answer(
+        LANGUAGE_PICKER_TEXT, reply_markup=_build_language_keyboard(selected_languages)
+    )
+
+
+@router.callback_query(F.data.startswith(f"{CALLBACK_PREFIX}:lang:"))
+async def handle_pick_language(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user is None or callback.data is None:
+        await callback.answer()
+        return
+
+    language_key = callback.data.split(":")[2]
+    tag_keys = visible_tag_keys([language_key])
+
+    async with async_session() as session:
+        subscriber = await get_or_create_subscriber(
+            session, telegram_user_id=callback.from_user.id, username=callback.from_user.username
+        )
+        current_skills = set(_json_list(subscriber.skills))
+
+    chosen = [key for key in tag_keys if key in current_skills]
+
+    await state.set_state(StackFSM.picking_tags)
+    await state.update_data(language=language_key, chosen=chosen)
+
+    lang_label = LANGUAGES[language_key].label
+    await callback.message.edit_text(
+        f"{lang_label} — отметь, что нужно (можно несколько), потом «Применить»:",
+        reply_markup=_build_tags_keyboard(chosen, tag_keys),
+    )
+    await callback.answer()
+
+
+@router.callback_query(StackFSM.picking_tags, F.data.startswith(f"{CALLBACK_PREFIX}:tag:toggle:"))
+async def handle_toggle_tag(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.data is None:
+        await callback.answer()
+        return
+
+    tag_key = callback.data.split(":")[3]
+    data = await state.get_data()
+    language_key = data.get("language")
+    chosen = set(data.get("chosen", []))
+
+    if tag_key in chosen:
+        chosen.discard(tag_key)
+    else:
+        chosen.add(tag_key)
+    await state.update_data(chosen=list(chosen))
+
+    tag_keys = visible_tag_keys([language_key])
+    await callback.message.edit_reply_markup(reply_markup=_build_tags_keyboard(list(chosen), tag_keys))
+    await callback.answer()
+
+
+@router.callback_query(StackFSM.picking_tags, F.data == f"{CALLBACK_PREFIX}:back")
+async def handle_back_to_languages(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user is None:
+        await callback.answer()
+        return
+    await state.clear()
+
+    async with async_session() as session:
+        subscriber = await get_or_create_subscriber(
+            session, telegram_user_id=callback.from_user.id, username=callback.from_user.username
+        )
+        selected_languages = _json_list(subscriber.languages)
+
+    await callback.message.edit_text(
+        LANGUAGE_PICKER_TEXT, reply_markup=_build_language_keyboard(selected_languages)
+    )
+    await callback.answer()
+
+
+@router.callback_query(StackFSM.picking_tags, F.data == f"{CALLBACK_PREFIX}:apply")
+async def handle_apply_stack(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user is None:
+        await callback.answer()
+        return
+
+    data = await state.get_data()
+    language_key = data.get("language")
+    chosen = set(data.get("chosen", []))
+    await state.clear()
+
+    language_tag_keys = set(visible_tag_keys([language_key]))
+
+    async with async_session() as session:
+        subscriber = await get_or_create_subscriber(
+            session, telegram_user_id=callback.from_user.id, username=callback.from_user.username
+        )
+        current_languages = set(_json_list(subscriber.languages))
+        current_skills = set(_json_list(subscriber.skills))
+
+        # Only touch this language's own tags (+ universal ones) — tags
+        # belonging to other languages added in earlier rounds stay as-is.
+        new_skills = (current_skills - language_tag_keys) | chosen
+        new_languages = current_languages | {language_key}
+
+        await update_subscriber_languages(session, subscriber, list(new_languages))
+        await update_subscriber_skills(session, subscriber, list(new_skills))
+
+    lang_label = LANGUAGES[language_key].label
+    await callback.message.edit_text(
+        f"Готово — {lang_label} добавлен в твой профиль. Нажми «{BTN_ADD_STACK}» ещё раз, "
+        f"чтобы добавить другой язык, или «{BTN_VIEW}», чтобы начать получать вакансии."
+    )
+    await callback.answer()
+
+
+@router.message(F.text == BTN_VIEW)
+async def handle_view_vacancies(message: Message) -> None:
+    if message.from_user is None:
+        return
+    await _delete_quietly(message)
+
+    async with async_session() as session:
+        subscriber = await get_or_create_subscriber(
+            session, telegram_user_id=message.from_user.id, username=message.from_user.username
+        )
+        subscriber = await resume_subscriber_by_telegram_id(session, message.from_user.id)
+
+    if subscriber is None:
+        await message.answer("Сначала напиши /start")
+        return
+    if subscriber.status == "blocked":
+        await message.answer("Доступ ограничен администратором.")
+        return
+
+    sent = await resend_matching_backlog(message.bot, subscriber)
+    if sent:
+        await message.answer(f"Рассылка включена. Нашёл и отправил {sent} подходящих вакансий за неделю.")
+    else:
+        await message.answer(
+            "Рассылка включена. Подходящих вакансий за последнюю неделю пока нет — "
+            "пришлю, как только появятся новые."
+        )
+
+
+@router.message(F.text == BTN_STOP)
+async def handle_stop_broadcast(message: Message) -> None:
+    if message.from_user is None:
+        return
+    await _delete_quietly(message)
+
+    async with async_session() as session:
+        await get_or_create_subscriber(
+            session, telegram_user_id=message.from_user.id, username=message.from_user.username
+        )
+        await pause_subscriber_by_telegram_id(session, message.from_user.id)
+
+    await message.answer(f"Рассылка остановлена. Включить снова — кнопка «{BTN_VIEW}».")
