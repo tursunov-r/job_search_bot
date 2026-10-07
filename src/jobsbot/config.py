@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     hh_search_url: str = "https://hh.ru/search/vacancy"
     hh_poll_interval_seconds: int = 600
 
+    habr_poll_interval_seconds: int = 600
+
     linkedin_enabled: bool = False
     linkedin_poll_interval_seconds: int = 3600
 

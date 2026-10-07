@@ -8,7 +8,7 @@ from jobsbot.ads.scheduler import broadcast_due_campaigns
 from jobsbot.bot.dispatcher import build_bot, build_dispatcher
 from jobsbot.bot.push import push_new_vacancies
 from jobsbot.config import settings
-from jobsbot.ingestion import hh_adapter, linkedin_adapter
+from jobsbot.ingestion import habr_adapter, hh_adapter, linkedin_adapter
 from jobsbot.ingestion.telegram_poller import TelegramChannelPoller
 from jobsbot.processing.languages import LANGUAGES
 from jobsbot.processing.pipeline import ingest
@@ -75,6 +75,54 @@ async def poll_hh() -> None:
                 await asyncio.sleep(hh_adapter.DETAIL_FETCH_DELAY_SECONDS)
 
 
+async def poll_habr_language(language_key: str) -> list:
+    lang = LANGUAGES[language_key]
+    try:
+        raw_vacancies = await habr_adapter.fetch_vacancies(lang.hh_search_term)
+    except Exception:
+        logger.exception("Habr polling failed for language %s", language_key)
+        return []
+
+    new_vacancies = []
+    async with async_session() as session:
+        source = await get_or_create_source(
+            session, "habr", f"habr_search_{language_key}", f"Habr Career search ({lang.label})"
+        )
+        for raw in raw_vacancies:
+            vacancy = await ingest(session, raw, source.id, language_hint=language_key)
+            if vacancy:
+                new_vacancies.append(vacancy)
+    logger.info(
+        "Habr poll [%s]: fetched %d, inserted %d new", language_key, len(raw_vacancies), len(new_vacancies)
+    )
+    return new_vacancies
+
+
+async def poll_habr() -> None:
+    all_new_vacancies = []
+    language_keys = list(LANGUAGES.keys())
+    for i, language_key in enumerate(language_keys):
+        all_new_vacancies.extend(await poll_habr_language(language_key))
+        if i < len(language_keys) - 1:
+            await asyncio.sleep(habr_adapter.PAGE_DELAY_SECONDS)
+
+    if not all_new_vacancies:
+        return
+
+    async with httpx.AsyncClient(
+        headers={"User-Agent": habr_adapter.USER_AGENT}, timeout=15.0, follow_redirects=True
+    ) as client:
+        for i, vacancy in enumerate(all_new_vacancies):
+            if not vacancy.url:
+                continue
+            details = await habr_adapter.fetch_vacancy_details(client, vacancy.url)
+            if details is not None and details.description:
+                async with async_session() as session:
+                    await update_vacancy_details(session, vacancy.id, description=details.description)
+            if i < len(all_new_vacancies) - 1:
+                await asyncio.sleep(habr_adapter.DETAIL_FETCH_DELAY_SECONDS)
+
+
 async def poll_linkedin() -> None:
     try:
         raw_vacancies = await linkedin_adapter.fetch_vacancies()
@@ -107,6 +155,7 @@ async def main() -> None:
 
     scheduler = AsyncIOScheduler()
     scheduler.add_job(poll_hh, "interval", seconds=settings.hh_poll_interval_seconds)
+    scheduler.add_job(poll_habr, "interval", seconds=settings.habr_poll_interval_seconds)
     if settings.linkedin_enabled:
         scheduler.add_job(poll_linkedin, "interval", seconds=settings.linkedin_poll_interval_seconds)
     if telegram_poller is not None:
@@ -139,6 +188,7 @@ async def main() -> None:
         task.add_done_callback(background_tasks.discard)
 
     _track(asyncio.create_task(poll_hh()))
+    _track(asyncio.create_task(poll_habr()))
     if settings.linkedin_enabled:
         _track(asyncio.create_task(poll_linkedin()))
     if telegram_poller is not None:
