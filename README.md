@@ -76,29 +76,22 @@ docker compose up -d
 python3 deploy.py
 ```
 
-### Ручные миграции схемы БД
+Скрипт останавливается на первом шаге, который завершился с ошибкой, и печатает код выхода — так что если что-то упало, видно сразу на каком этапе.
 
-В проекте нет Alembic — таблицы создаются один раз при самом первом старте (`SQLModel.metadata.create_all()`), **но не изменяются** на уже существующей базе при добавлении новых полей в модели. Если в очередном обновлении код добавил новые колонки (смотреть changelog/коммиты на `storage/models.py`) — перед `docker compose up -d --build` на уже работающем деплое нужно накатить `ALTER TABLE` руками, иначе бот упадёт на первом же запросе к БД с `column does not exist`.
+### Миграции схемы БД (Alembic)
 
-Пример (актуален для добавления `uuid`/`experience`/`employment_type`/`schedule`/`work_format` в `vacancies`):
+Миграции накатываются **автоматически при каждом запуске** бота (`storage/db.py::init_db()` вызывает `alembic upgrade head` перед стартом) — руками ничего делать не нужно, в том числе на уже работающем деплое: если в коде появилась новая миграция, она применится сама на следующем перезапуске контейнера (`python3 deploy.py` или `docker compose up -d --build`), а если база уже на последней версии — это просто no-op.
+
+Как добавить новую миграцию (для разработки):
 
 ```bash
-docker compose exec postgres psql -U "$DB_USER" -d "$DB_NAME" <<'SQL'
-ALTER TABLE vacancies
-  ADD COLUMN IF NOT EXISTS uuid VARCHAR,
-  ADD COLUMN IF NOT EXISTS experience VARCHAR,
-  ADD COLUMN IF NOT EXISTS employment_type VARCHAR,
-  ADD COLUMN IF NOT EXISTS schedule VARCHAR,
-  ADD COLUMN IF NOT EXISTS work_format VARCHAR;
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-UPDATE vacancies SET uuid = gen_random_uuid()::text WHERE uuid IS NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS ix_vacancies_uuid ON vacancies (uuid);
-SQL
+# после изменения моделей в storage/models.py
+alembic revision --autogenerate -m "краткое описание изменения"
+# проверить сгенерированный файл в alembic/versions/ — autogenerate не всегда
+# угадывает верно (переименования колонок, сложные constraint'ы и т.п.)
 ```
 
-На **новом** деплое (чистая база, таблицы ещё не существуют) этот шаг не нужен — `create_all()` сразу создаст таблицу с полным набором колонок.
-
-Останавливается на первом шаге, который завершился с ошибкой, и печатает код выхода — так что если что-то упало, видно сразу на каком этапе.
+Закоммитить получившийся файл из `alembic/versions/` вместе с изменением модели — на следующем деплое миграция применится сама.
 
 ## Локальный запуск без Docker (для разработки)
 
