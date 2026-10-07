@@ -42,7 +42,7 @@
 | PHP | `php` | `php` |
 | Ruby | `ruby` | `ruby` |
 
-Полный список фреймворков/инструментов под каждый язык + универсальные инфраструктурные теги (PostgreSQL, MySQL, MongoDB, Redis, RabbitMQ, Kafka, Docker/K8s) — в `src/jobsbot/processing/stack_tags.py`; пользователь выбирает их в боте через `/stack`.
+Полный список фреймворков/инструментов под каждый язык + универсальные инфраструктурные теги (PostgreSQL, MySQL, MongoDB, Redis, RabbitMQ, Kafka, Docker/K8s) — в `src/jobsbot/processing/stack_tags.py`; пользователь выбирает их в боте через кнопку «➕ Добавить стек».
 
 ## Дедупликация
 
