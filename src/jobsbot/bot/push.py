@@ -1,8 +1,10 @@
+import html as html_lib
 import json
 import logging
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from jobsbot.processing.stack_tags import matches_stack
 from jobsbot.storage.db import async_session
@@ -18,18 +20,50 @@ from jobsbot.storage.repo import (
 
 logger = logging.getLogger(__name__)
 
+DESCRIPTION_PREVIEW_LIMIT = 400
+
+
+def _truncate(text: str, limit: int = DESCRIPTION_PREVIEW_LIMIT) -> str:
+    if len(text) <= limit:
+        return text
+    truncated = text[:limit].rsplit(" ", 1)[0]
+    return f"{truncated}…"
+
 
 def format_vacancy(vacancy: Vacancy) -> str:
-    lines = [f"<b>{vacancy.title}</b>"]
-    if vacancy.company:
-        lines.append(vacancy.company)
-    if vacancy.location:
-        lines.append(vacancy.location)
+    details = []
     if vacancy.salary_text:
-        lines.append(vacancy.salary_text)
-    if vacancy.url:
-        lines.append(vacancy.url)
-    return "\n".join(lines)
+        details.append(f"💰 {html_lib.escape(vacancy.salary_text)}")
+    if vacancy.company:
+        details.append(f"🏢 {html_lib.escape(vacancy.company)}")
+
+    location_bits = [part for part in (vacancy.location, vacancy.work_format) if part]
+    if location_bits:
+        details.append(f"📍 {html_lib.escape(' · '.join(location_bits))}")
+
+    if vacancy.experience:
+        details.append(f"🧑‍💻 Опыт: {html_lib.escape(vacancy.experience)}")
+    if vacancy.employment_type:
+        details.append(f"📋 {html_lib.escape(vacancy.employment_type)}")
+    if vacancy.schedule:
+        details.append(f"🗓 {html_lib.escape(vacancy.schedule)}")
+
+    blocks = [f"<b>{html_lib.escape(vacancy.title)}</b>"]
+    if details:
+        blocks.append("\n".join(details))
+    if vacancy.description:
+        blocks.append(html_lib.escape(_truncate(vacancy.description)))
+    blocks.append(f"ID: <code>{vacancy.uuid}</code>")
+
+    return "\n\n".join(blocks)
+
+
+def build_vacancy_keyboard(vacancy: Vacancy) -> InlineKeyboardMarkup | None:
+    if not vacancy.url:
+        return None
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="🔗 Подробнее", url=vacancy.url)]]
+    )
 
 
 def _json_list(value: str) -> list[str]:
@@ -62,12 +96,23 @@ async def _deliver_vacancy(bot: Bot, telegram_user_id: int, vacancy: Vacancy) ->
             # The bot itself isn't a member of the source channel (only the
             # Telethon listener session is) — forwarding across accounts
             # like that commonly fails. Fall back to plain text so the
-            # vacancy isn't silently lost.
+            # vacancy isn't silently lost. forward_message doesn't support
+            # reply_markup anyway, but a plain send_message does, so this
+            # fallback still gets the "Подробнее" button if there's a URL.
             logger.warning("Forward failed for vacancy %s, falling back to plain text", vacancy.id)
-            await bot.send_message(telegram_user_id, vacancy.description or vacancy.title)
+            await bot.send_message(
+                telegram_user_id,
+                vacancy.description or vacancy.title,
+                reply_markup=build_vacancy_keyboard(vacancy),
+            )
             return
 
-    await bot.send_message(telegram_user_id, format_vacancy(vacancy), parse_mode="HTML")
+    await bot.send_message(
+        telegram_user_id,
+        format_vacancy(vacancy),
+        parse_mode="HTML",
+        reply_markup=build_vacancy_keyboard(vacancy),
+    )
 
 
 async def push_new_vacancies(bot: Bot) -> None:

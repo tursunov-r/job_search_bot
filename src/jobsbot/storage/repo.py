@@ -220,12 +220,30 @@ async def update_subscriber_languages(
     return subscriber
 
 
-async def update_vacancy_description(session: AsyncSession, vacancy_id: int, description: str) -> None:
+async def update_vacancy_details(
+    session: AsyncSession,
+    vacancy_id: int,
+    *,
+    description: str | None = None,
+    experience: str | None = None,
+    employment_type: str | None = None,
+    schedule: str | None = None,
+    work_format: str | None = None,
+) -> None:
     result = await session.exec(select(Vacancy).where(Vacancy.id == vacancy_id))
     vacancy = result.first()
     if vacancy is None:
         return
-    vacancy.description = description
+    if description:
+        vacancy.description = description
+    if experience:
+        vacancy.experience = experience
+    if employment_type:
+        vacancy.employment_type = employment_type
+    if schedule:
+        vacancy.schedule = schedule
+    if work_format:
+        vacancy.work_format = work_format
     session.add(vacancy)
     await session.commit()
 

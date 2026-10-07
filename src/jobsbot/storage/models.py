@@ -1,3 +1,4 @@
+import uuid as uuid_lib
 from datetime import datetime, timezone
 
 from sqlmodel import SQLModel, Field, UniqueConstraint
@@ -21,6 +22,7 @@ class Vacancy(SQLModel, table=True):
     __tablename__ = "vacancies"
 
     id: int | None = Field(default=None, primary_key=True)
+    uuid: str = Field(default_factory=lambda: str(uuid_lib.uuid4()), index=True, unique=True)
     fingerprint: str = Field(index=True, unique=True)
     title: str
     company: str | None = None
@@ -30,6 +32,10 @@ class Vacancy(SQLModel, table=True):
     raw_source_ids: str = Field(default="[]")  # JSON array of source_ids (cross-post tracking)
     salary_text: str | None = None
     location: str | None = None
+    work_format: str | None = None  # remote / office / hybrid, as stated by the source
+    experience: str | None = None
+    employment_type: str | None = None
+    schedule: str | None = None
     posted_at: datetime | None = Field(default=None, index=True)
     first_seen_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     is_python_relevant: bool = True

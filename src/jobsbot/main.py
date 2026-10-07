@@ -13,7 +13,7 @@ from jobsbot.ingestion.telegram_poller import TelegramChannelPoller
 from jobsbot.processing.languages import LANGUAGES
 from jobsbot.processing.pipeline import ingest
 from jobsbot.storage.db import async_session, init_db
-from jobsbot.storage.repo import get_or_create_source, update_vacancy_description
+from jobsbot.storage.repo import get_or_create_source, update_vacancy_details
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -59,10 +59,18 @@ async def poll_hh() -> None:
         for i, vacancy in enumerate(all_new_vacancies):
             if not vacancy.url:
                 continue
-            description = await hh_adapter.fetch_description(client, vacancy.url)
-            if description:
+            details = await hh_adapter.fetch_vacancy_details(client, vacancy.url)
+            if details is not None:
                 async with async_session() as session:
-                    await update_vacancy_description(session, vacancy.id, description)
+                    await update_vacancy_details(
+                        session,
+                        vacancy.id,
+                        description=details.description,
+                        experience=details.experience,
+                        employment_type=details.employment_type,
+                        schedule=details.schedule,
+                        work_format=details.work_format,
+                    )
             if i < len(all_new_vacancies) - 1:
                 await asyncio.sleep(hh_adapter.DETAIL_FETCH_DELAY_SECONDS)
 

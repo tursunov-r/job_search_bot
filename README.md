@@ -76,6 +76,28 @@ docker compose up -d
 python3 deploy.py
 ```
 
+### Ручные миграции схемы БД
+
+В проекте нет Alembic — таблицы создаются один раз при самом первом старте (`SQLModel.metadata.create_all()`), **но не изменяются** на уже существующей базе при добавлении новых полей в модели. Если в очередном обновлении код добавил новые колонки (смотреть changelog/коммиты на `storage/models.py`) — перед `docker compose up -d --build` на уже работающем деплое нужно накатить `ALTER TABLE` руками, иначе бот упадёт на первом же запросе к БД с `column does not exist`.
+
+Пример (актуален для добавления `uuid`/`experience`/`employment_type`/`schedule`/`work_format` в `vacancies`):
+
+```bash
+docker compose exec postgres psql -U "$DB_USER" -d "$DB_NAME" <<'SQL'
+ALTER TABLE vacancies
+  ADD COLUMN IF NOT EXISTS uuid VARCHAR,
+  ADD COLUMN IF NOT EXISTS experience VARCHAR,
+  ADD COLUMN IF NOT EXISTS employment_type VARCHAR,
+  ADD COLUMN IF NOT EXISTS schedule VARCHAR,
+  ADD COLUMN IF NOT EXISTS work_format VARCHAR;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+UPDATE vacancies SET uuid = gen_random_uuid()::text WHERE uuid IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS ix_vacancies_uuid ON vacancies (uuid);
+SQL
+```
+
+На **новом** деплое (чистая база, таблицы ещё не существуют) этот шаг не нужен — `create_all()` сразу создаст таблицу с полным набором колонок.
+
 Останавливается на первом шаге, который завершился с ошибкой, и печатает код выхода — так что если что-то упало, видно сразу на каком этапе.
 
 ## Локальный запуск без Docker (для разработки)
