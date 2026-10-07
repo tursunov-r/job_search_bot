@@ -117,7 +117,10 @@ async def get_or_create_subscriber(
     )
     subscriber = result.first()
     if subscriber:
-        subscriber.status = "active"
+        # Deliberately NOT touching status here — this is called at the top
+        # of almost every handler, so forcing status back to "active" on
+        # every interaction would silently undo a self-service pause or
+        # even an admin block the moment the person pressed any button.
         subscriber.last_interaction_at = datetime.now(timezone.utc)
         session.add(subscriber)
         await session.commit()
@@ -125,7 +128,10 @@ async def get_or_create_subscriber(
         return subscriber
     initial_cursor = await get_cursor_for_new_subscriber(session)
     subscriber = Subscriber(
-        telegram_user_id=telegram_user_id, username=username, last_vacancy_sent_id=initial_cursor
+        telegram_user_id=telegram_user_id,
+        username=username,
+        last_vacancy_sent_id=initial_cursor,
+        status="paused",  # vacancy delivery only starts once they press "Смотреть вакансии"
     )
     session.add(subscriber)
     await session.commit()
@@ -179,7 +185,7 @@ async def get_delivered_vacancy_ids(
 async def get_undelivered_recent_vacancies(
     session: AsyncSession, subscriber_id: int, days: int = 7, limit: int = 50
 ) -> list[Vacancy]:
-    """For re-scanning after a /stack or /language change: recent vacancies
+    """For re-scanning after a profile change: recent vacancies
     this subscriber hasn't been sent yet, regardless of where their push
     cursor currently sits (it may have already moved past some of these
     because they didn't match the *old* filter)."""
@@ -356,7 +362,7 @@ async def remove_staff_member(session: AsyncSession, staff_id: int) -> StaffMemb
 
 
 async def _set_subscriber_status_by_telegram_id(
-    session: AsyncSession, telegram_user_id: int, status: str
+    session: AsyncSession, telegram_user_id: int, status: str, *, skip_if_blocked: bool = False
 ) -> Subscriber | None:
     result = await session.exec(
         select(Subscriber).where(Subscriber.telegram_user_id == telegram_user_id)
@@ -364,6 +370,8 @@ async def _set_subscriber_status_by_telegram_id(
     subscriber = result.first()
     if subscriber is None:
         return None
+    if skip_if_blocked and subscriber.status == "blocked":
+        return subscriber
     subscriber.status = status
     session.add(subscriber)
     await session.commit()
@@ -377,3 +385,18 @@ async def block_subscriber_by_telegram_id(session: AsyncSession, telegram_user_i
 
 async def unblock_subscriber_by_telegram_id(session: AsyncSession, telegram_user_id: int) -> Subscriber | None:
     return await _set_subscriber_status_by_telegram_id(session, telegram_user_id, "active")
+
+
+async def pause_subscriber_by_telegram_id(session: AsyncSession, telegram_user_id: int) -> Subscriber | None:
+    """Self-service stop — unlike admin block/unblock, this never overrides
+    an existing "blocked" status (a paused self-service toggle shouldn't be
+    able to undo an admin's block)."""
+    return await _set_subscriber_status_by_telegram_id(
+        session, telegram_user_id, "paused", skip_if_blocked=True
+    )
+
+
+async def resume_subscriber_by_telegram_id(session: AsyncSession, telegram_user_id: int) -> Subscriber | None:
+    return await _set_subscriber_status_by_telegram_id(
+        session, telegram_user_id, "active", skip_if_blocked=True
+    )
