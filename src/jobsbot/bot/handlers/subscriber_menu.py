@@ -39,14 +39,17 @@ class StackFSM(StatesGroup):
     picking_tags = State()
 
 
-def build_menu_keyboard() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text=BTN_ADD_STACK)],
-            [KeyboardButton(text=BTN_VIEW), KeyboardButton(text=BTN_STOP)],
-        ],
-        resize_keyboard=True,
-    )
+def build_menu_keyboard(extra_rows: list[list[KeyboardButton]] | None = None) -> ReplyKeyboardMarkup:
+    # Telegram only ever shows one reply keyboard at a time, so staff/admin
+    # rows (if any) get appended here rather than sent as a separate
+    # keyboard via /admin — otherwise picking one would silently replace
+    # the other instead of the two coexisting.
+    rows = [
+        [KeyboardButton(text=BTN_ADD_STACK)],
+        [KeyboardButton(text=BTN_VIEW), KeyboardButton(text=BTN_STOP)],
+    ]
+    rows.extend(extra_rows or [])
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
 def _json_list(value: str) -> list[str]:

@@ -16,7 +16,12 @@ from jobsbot.config import settings  # noqa: E402
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers defaults to True, which would silently kill
+    # every jobsbot.* logger the app already created before init_db() runs
+    # this on every startup (fileConfig disables any logger not explicitly
+    # listed in alembic.ini's [loggers] section) — the app would still run
+    # fine, just with its own logging permanently switched off.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = SQLModel.metadata
 

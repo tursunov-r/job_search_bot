@@ -44,7 +44,7 @@ class AdminFSM(StatesGroup):
     add_staff_permissions = State()
 
 
-async def build_admin_keyboard(user_id: int) -> ReplyKeyboardMarkup | None:
+async def get_admin_menu_rows(user_id: int) -> list[list[KeyboardButton]]:
     perms = await get_permissions(user_id)
     rows: list[list[KeyboardButton]] = []
     if "manage_channels" in perms and settings.telegram_enabled:
@@ -55,6 +55,11 @@ async def build_admin_keyboard(user_id: int) -> ReplyKeyboardMarkup | None:
         rows.append([KeyboardButton(text=BTN_ADS)])
     if is_super_admin(user_id):
         rows.append([KeyboardButton(text=BTN_STAFF)])
+    return rows
+
+
+async def build_admin_keyboard(user_id: int) -> ReplyKeyboardMarkup | None:
+    rows = await get_admin_menu_rows(user_id)
     if not rows:
         return None
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
