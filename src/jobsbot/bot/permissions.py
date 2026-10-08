@@ -12,6 +12,7 @@ PERMISSIONS: dict[str, str] = {
     "manage_channels": "Каналы",
     "block_users": "Блокировка пользователей",
     "manage_ads": "Реклама",
+    "moderate_vacancies": "Жалобы на вакансии",
 }
 
 

@@ -1,7 +1,7 @@
 import json
 from datetime import datetime, timedelta, timezone
 
-from sqlmodel import select
+from sqlmodel import delete, select, update
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from jobsbot.storage.models import (
@@ -12,6 +12,7 @@ from jobsbot.storage.models import (
     Subscriber,
     Vacancy,
     VacancyDelivery,
+    VacancyReport,
 )
 
 
@@ -89,6 +90,11 @@ async def get_vacancy_by_fingerprint(session: AsyncSession, fingerprint: str) ->
     return result.first()
 
 
+async def get_vacancy_by_id(session: AsyncSession, vacancy_id: int) -> Vacancy | None:
+    result = await session.exec(select(Vacancy).where(Vacancy.id == vacancy_id))
+    return result.first()
+
+
 async def insert_vacancy(session: AsyncSession, vacancy: Vacancy) -> Vacancy:
     session.add(vacancy)
     await session.commit()
@@ -162,6 +168,7 @@ async def get_pending_vacancies_for_subscriber(
         .where(
             Vacancy.id > cursor_id,
             Vacancy.is_python_relevant == True,  # noqa: E712
+            Vacancy.hidden == False,  # noqa: E712
             _details_ready_clause(),
         )
         .order_by(Vacancy.id)
@@ -211,6 +218,7 @@ async def get_undelivered_recent_vacancies(
         .where(
             Vacancy.first_seen_at >= cutoff,
             Vacancy.id.not_in(delivered_subquery),
+            Vacancy.hidden == False,  # noqa: E712
             _details_ready_clause(),
         )
         .order_by(Vacancy.id)
@@ -451,3 +459,74 @@ async def resume_subscriber_by_telegram_id(session: AsyncSession, telegram_user_
     return await _set_subscriber_status_by_telegram_id(
         session, telegram_user_id, "active", skip_if_blocked=True
     )
+
+
+async def get_staff_telegram_ids_with_permission(session: AsyncSession, permission: str) -> list[int]:
+    result = await session.exec(
+        select(StaffMember.telegram_user_id, StaffMember.permissions).where(StaffMember.status == "active")
+    )
+    return [
+        telegram_user_id
+        for telegram_user_id, permissions in result.all()
+        if permission in json.loads(permissions)
+    ]
+
+
+async def set_vacancy_hidden(session: AsyncSession, vacancy_id: int, hidden: bool) -> None:
+    result = await session.exec(select(Vacancy).where(Vacancy.id == vacancy_id))
+    vacancy = result.first()
+    if vacancy is None:
+        return
+    vacancy.hidden = hidden
+    session.add(vacancy)
+    await session.commit()
+
+
+async def create_vacancy_report(
+    session: AsyncSession, vacancy_id: int, subscriber_id: int, comment: str
+) -> VacancyReport:
+    report = VacancyReport(vacancy_id=vacancy_id, subscriber_id=subscriber_id, comment=comment)
+    session.add(report)
+    await session.commit()
+    await session.refresh(report)
+    return report
+
+
+async def get_vacancy_report(session: AsyncSession, report_id: int) -> VacancyReport | None:
+    result = await session.exec(select(VacancyReport).where(VacancyReport.id == report_id))
+    return result.first()
+
+
+async def resolve_vacancy_report(
+    session: AsyncSession, report: VacancyReport, status: str, resolved_by_telegram_user_id: int
+) -> None:
+    report.status = status
+    report.resolved_by_telegram_user_id = resolved_by_telegram_user_id
+    report.resolved_at = datetime.now(timezone.utc)
+    session.add(report)
+    await session.commit()
+
+
+async def cleanup_old_vacancies(session: AsyncSession, retention_days: int) -> int:
+    """Deletes vacancies older than retention_days, after first advancing
+    any subscriber cursor that still points inside the range about to be
+    deleted — otherwise it'd end up referencing a row that no longer
+    exists, and (since the cursor comparison treats a lower id as "still
+    pending") could resurrect everything after it as unseen."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    result = await session.exec(select(Vacancy.id).where(Vacancy.first_seen_at < cutoff))
+    old_ids = list(result.all())
+    if not old_ids:
+        return 0
+
+    max_old_id = max(old_ids)
+    await session.execute(
+        update(Subscriber)
+        .where(Subscriber.last_vacancy_sent_id < max_old_id)
+        .values(last_vacancy_sent_id=max_old_id)
+    )
+    await session.execute(delete(VacancyDelivery).where(VacancyDelivery.vacancy_id.in_(old_ids)))
+    await session.execute(delete(VacancyReport).where(VacancyReport.vacancy_id.in_(old_ids)))
+    await session.execute(delete(Vacancy).where(Vacancy.id.in_(old_ids)))
+    await session.commit()
+    return len(old_ids)

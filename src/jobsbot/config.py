@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     vacancy_push_interval_seconds: int = 180
     ad_broadcast_check_interval_seconds: int = 1800
 
+    vacancy_retention_days: int = 14
+    vacancy_cleanup_interval_seconds: int = 86400
+
     db_host: str = "postgres"
     db_port: int = 5432
     db_name: str = "jobsbot"

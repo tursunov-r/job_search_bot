@@ -13,7 +13,7 @@ from jobsbot.ingestion.telegram_poller import TelegramChannelPoller
 from jobsbot.processing.languages import LANGUAGES
 from jobsbot.processing.pipeline import ingest
 from jobsbot.storage.db import async_session, init_db
-from jobsbot.storage.repo import get_or_create_source, update_vacancy_details
+from jobsbot.storage.repo import cleanup_old_vacancies, get_or_create_source, update_vacancy_details
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -146,6 +146,13 @@ async def poll_linkedin() -> None:
         logger.info("LinkedIn poll: fetched %d, inserted %d new", len(raw_vacancies), inserted)
 
 
+async def cleanup_vacancies() -> None:
+    async with async_session() as session:
+        deleted = await cleanup_old_vacancies(session, settings.vacancy_retention_days)
+    if deleted:
+        logger.info("Cleanup: removed %d vacancies older than %d days", deleted, settings.vacancy_retention_days)
+
+
 async def main() -> None:
     await init_db()
 
@@ -179,6 +186,9 @@ async def main() -> None:
         "interval",
         seconds=settings.ad_broadcast_check_interval_seconds,
         args=[bot],
+    )
+    scheduler.add_job(
+        cleanup_vacancies, "interval", seconds=settings.vacancy_cleanup_interval_seconds
     )
     scheduler.start()
 

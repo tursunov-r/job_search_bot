@@ -58,12 +58,12 @@ def format_vacancy(vacancy: Vacancy) -> str:
     return "\n\n".join(blocks)
 
 
-def build_vacancy_keyboard(vacancy: Vacancy) -> InlineKeyboardMarkup | None:
-    if not vacancy.url:
-        return None
-    return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="🔗 Подробнее", url=vacancy.url)]]
-    )
+def build_vacancy_keyboard(vacancy: Vacancy) -> InlineKeyboardMarkup:
+    row = []
+    if vacancy.url:
+        row.append(InlineKeyboardButton(text="🔗 Подробнее", url=vacancy.url))
+    row.append(InlineKeyboardButton(text="🚩 Пожаловаться", callback_data=f"report:{vacancy.id}"))
+    return InlineKeyboardMarkup(inline_keyboard=[row])
 
 
 def _json_list(value: str) -> list[str]:
@@ -106,6 +106,13 @@ async def _deliver_vacancy(bot: Bot, telegram_user_id: int, vacancy: Vacancy) ->
         try:
             await bot.forward_message(
                 telegram_user_id, from_chat_id=vacancy.source_chat_id, message_id=vacancy.source_message_id
+            )
+            # forward_message doesn't support reply_markup, so the report
+            # button has to ride along on a tiny separate follow-up instead.
+            await bot.send_message(
+                telegram_user_id,
+                "Если с вакансией выше что-то не так:",
+                reply_markup=build_vacancy_keyboard(vacancy),
             )
             return
         except (TelegramForbiddenError, TelegramRetryAfter):

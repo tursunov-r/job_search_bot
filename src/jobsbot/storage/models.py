@@ -52,6 +52,10 @@ class Vacancy(SQLModel, table=True):
     # and failed), so subscribers never get a message missing fields that
     # simply hadn't been fetched yet.
     details_checked: bool = True
+    # Set the moment a subscriber reports it — excluded from delivery to
+    # anyone else until an admin with "moderate_vacancies" resolves the
+    # report (keep it visible again, or leave it permanently hidden).
+    hidden: bool = False
 
 
 class Subscriber(SQLModel, table=True):
@@ -85,6 +89,23 @@ class VacancyDelivery(SQLModel, table=True):
     subscriber_id: int = Field(foreign_key="subscribers.id", index=True)
     vacancy_id: int = Field(foreign_key="vacancies.id", index=True)
     delivered_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class VacancyReport(SQLModel, table=True):
+    """A subscriber's complaint about a vacancy, with a mandatory comment —
+    created the moment they report it (which also immediately hides the
+    vacancy, see Vacancy.hidden), resolved later by an admin."""
+
+    __tablename__ = "vacancy_reports"
+
+    id: int | None = Field(default=None, primary_key=True)
+    vacancy_id: int = Field(foreign_key="vacancies.id", index=True)
+    subscriber_id: int = Field(foreign_key="subscribers.id")
+    comment: str
+    status: str = "pending"  # 'pending', 'resolved_removed', 'resolved_kept'
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    resolved_by_telegram_user_id: int | None = Field(default=None, sa_type=BigInteger)
+    resolved_at: datetime | None = None
 
 
 class StaffMember(SQLModel, table=True):

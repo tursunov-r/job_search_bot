@@ -139,6 +139,8 @@ PYTHONPATH=src pytest tests/ -v
 | `LINKEDIN_POLL_INTERVAL_SECONDS` | нет | `3600` | Как часто (сек) опрашивать LinkedIn, если включён |
 | `VACANCY_PUSH_INTERVAL_SECONDS` | нет | `180` | Как часто (сек) рассылать подписчикам накопившиеся новые вакансии |
 | `AD_BROADCAST_CHECK_INTERVAL_SECONDS` | нет | `1800` | Как часто (сек) проверять, не пора ли разослать очередную рекламную кампанию |
+| `VACANCY_RETENTION_DAYS` | нет | `14` | Сколько дней хранить вакансию в БД, прежде чем её удалит ежедневная очистка |
+| `VACANCY_CLEANUP_INTERVAL_SECONDS` | нет | `86400` | Как часто (сек) запускать очистку устаревших вакансий (по умолчанию раз в сутки) |
 | `DB_HOST` | нет | `postgres` | Хост Postgres. `postgres` — имя сервиса в docker-compose; для локального запуска без Docker — `localhost` |
 | `DB_PORT` | нет | `5432` | Порт Postgres |
 | `DB_NAME` | нет | `jobsbot` | Имя базы данных |
