@@ -45,3 +45,13 @@ def test_visible_tags_includes_mobile_tags():
 
 def test_matches_mobile_stack_tag_in_title():
     assert matches_stack("Flutter Developer (BLoC)", None, ["bloc"])
+
+
+def test_visible_tags_includes_devops_sysadmin_qa_tags():
+    assert "terraform" in visible_tag_keys(["devops"])
+    assert "zabbix" in visible_tag_keys(["sysadmin"])
+    assert "selenium" in visible_tag_keys(["qa"])
+
+
+def test_matches_qa_stack_tag_in_description():
+    assert matches_stack("QA Engineer", "Пишем автотесты на Selenium и Playwright", ["selenium"])

@@ -60,6 +60,20 @@ def test_detects_dart_via_flutter_or_dart():
     assert detect_languages("Dart Developer", "") == ["dart"]
 
 
+def test_detects_devops():
+    assert detect_languages("DevOps Engineer", "") == ["devops"]
+    assert detect_languages("Инженер DevOps", "") == ["devops"]
+
+
+def test_detects_sysadmin():
+    assert detect_languages("Системный администратор", "") == ["sysadmin"]
+
+
+def test_detects_qa():
+    assert detect_languages("Тестировщик", "") == ["qa"]
+    assert detect_languages("QA Engineer", "") == ["qa"]
+
+
 def test_mobile_languages_are_in_mobile_category():
     mobile_keys = {lang.key for lang in languages_in_category("mobile")}
     assert mobile_keys == {"kotlin", "swift", "dart"}
@@ -68,6 +82,12 @@ def test_mobile_languages_are_in_mobile_category():
 def test_javascript_is_in_both_frontend_and_backend():
     assert "javascript" in {lang.key for lang in languages_in_category("frontend")}
     assert "javascript" in {lang.key for lang in languages_in_category("backend")}
+
+
+def test_devops_sysadmin_qa_categories():
+    assert {lang.key for lang in languages_in_category("devops")} == {"devops"}
+    assert {lang.key for lang in languages_in_category("sysadmin")} == {"sysadmin"}
+    assert {lang.key for lang in languages_in_category("qa")} == {"qa"}
 
 
 def test_every_language_belongs_to_at_least_one_category():

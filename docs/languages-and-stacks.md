@@ -26,6 +26,11 @@
 | Kotlin | `kotlin` | Mobile | `kotlin` | `kotlin` |
 | Swift | `swift` | Mobile | `swift` | `swift` *(слово "swift" изредка встречается в банковском контексте — SWIFT-платежи; поскольку это единственное ключевое слово, детект по описанию никогда не срабатывает — см. `_count_matches`, порог "≥2" недостижим с одним словом; риск ложного срабатывания остаётся только для заголовка)* |
 | Dart/Flutter | `dart` | Mobile | `flutter` *(а не `dart` — по факту почти все вакансии ищут именно "Flutter")* | `flutter`, `dart` |
+| DevOps | `devops` | DevOps | `devops` | `devops`, `девопс` |
+| Системное администрирование | `sysadmin` | SysAdmin | `системный администратор` | `системный администратор`, `сисадмин`, `sysadmin` |
+| QA/Тестирование | `qa` | QA | `тестировщик` | `тестировщик`, `qa engineer` |
+
+DevOps/SysAdmin/QA — не языки программирования в обычном смысле, но заведены как записи в том же реестре `LANGUAGES` намеренно: вся остальная логика (поиск на hh.ru/Habr, детект для Telegram-каналов, группировка по сфере, теги стека) уже работает универсально поверх этой структуры, заводить отдельный параллельный механизм не было смысла.
 
 **LinkedIn-источник — исключение**: там язык всегда жёстко `python`, независимо от реестра выше (см. `docs/sources.md`).
 
@@ -85,6 +90,21 @@
 | BLoC | `bloc` | Dart/Flutter | `bloc` |
 | Provider | `provider` | Dart/Flutter | `provider` |
 | Dio | `dio` | Dart/Flutter | `dio` |
+| Terraform | `terraform` | DevOps | `terraform` |
+| Ansible | `ansible` | DevOps | `ansible` |
+| Jenkins | `jenkins` | DevOps | `jenkins` |
+| Prometheus/Grafana | `prometheus` | DevOps | `prometheus`, `grafana` |
+| GitLab CI | `gitlabci` | DevOps | `gitlab ci`, `gitlab-ci` |
+| Linux | `linuxadmin` | SysAdmin | `linux` |
+| Windows Server | `windowsserver` | SysAdmin | `windows server` |
+| Active Directory | `activedirectory` | SysAdmin | `active directory` |
+| Zabbix | `zabbix` | SysAdmin | `zabbix` |
+| Bash/Shell | `bashscripting` | SysAdmin | `bash`, `shell script` |
+| Selenium | `selenium` | QA | `selenium` |
+| Postman | `postman` | QA | `postman` |
+| Cypress | `cypress` | QA | `cypress` |
+| Playwright | `playwright` | QA | `playwright` |
+| JMeter | `jmeter` | QA | `jmeter` |
 
 ### Универсальные (видны всегда, при любом выбранном языке или без него)
 

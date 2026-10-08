@@ -21,6 +21,9 @@ CATEGORIES: dict[str, str] = {
     "backend": "🖥 Backend",
     "frontend": "🎨 Frontend",
     "mobile": "📱 Mobile",
+    "devops": "⚙️ DevOps",
+    "sysadmin": "🖧 SysAdmin",
+    "qa": "🧪 QA",
 }
 
 LANGUAGES: dict[str, Language] = {
@@ -47,12 +50,31 @@ LANGUAGES: dict[str, Language] = {
         # threshold, see _count_matches) keeps that mostly harmless.
         Language("swift", "Swift", "swift", ("swift",), categories=("mobile",)),
         Language("dart", "Dart/Flutter", "flutter", ("flutter", "dart"), categories=("mobile",)),
+        # Not "languages" in the usual sense, but reuse the same registry —
+        # everything downstream (hh_search_term, detect_languages, category
+        # grouping, stack tags) already works generically off this shape.
+        Language("devops", "DevOps", "devops", ("devops", "девопс"), categories=("devops",)),
+        Language(
+            "sysadmin",
+            "Системное администрирование",
+            "системный администратор",
+            ("системный администратор", "сисадмин", "sysadmin"),
+            categories=("sysadmin",),
+        ),
+        Language(
+            "qa",
+            "QA/Тестирование",
+            "тестировщик",
+            ("тестировщик", "qa engineer"),
+            categories=("qa",),
+        ),
     )
 }
 
 
 def languages_in_category(category_key: str) -> list[Language]:
     return [lang for lang in LANGUAGES.values() if category_key in lang.categories]
+
 
 _WORD_RE_CACHE: dict[str, re.Pattern] = {}
 
