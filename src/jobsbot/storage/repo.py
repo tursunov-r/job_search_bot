@@ -1,12 +1,15 @@
 import json
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import or_
 from sqlmodel import delete, select, update
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from jobsbot.storage.models import (
     AdCampaign,
     AdImpression,
+    GroupTopic,
+    GroupTopicPost,
     Source,
     StaffMember,
     Subscriber,
@@ -537,6 +540,62 @@ async def cleanup_old_vacancies(session: AsyncSession, retention_days: int) -> i
     )
     await session.execute(delete(VacancyDelivery).where(VacancyDelivery.vacancy_id.in_(old_ids)))
     await session.execute(delete(VacancyReport).where(VacancyReport.vacancy_id.in_(old_ids)))
+    await session.execute(delete(GroupTopicPost).where(GroupTopicPost.vacancy_id.in_(old_ids)))
     await session.execute(delete(Vacancy).where(Vacancy.id.in_(old_ids)))
     await session.commit()
     return len(old_ids)
+
+
+async def get_group_topic_map(session: AsyncSession) -> dict[str, int]:
+    result = await session.exec(select(GroupTopic.language_key, GroupTopic.thread_id))
+    return dict(result.all())
+
+
+async def set_group_topic(session: AsyncSession, language_key: str, thread_id: int) -> GroupTopic:
+    existing = await session.exec(select(GroupTopic).where(GroupTopic.language_key == language_key))
+    topic = existing.first()
+    if topic is None:
+        topic = GroupTopic(language_key=language_key, thread_id=thread_id)
+    else:
+        topic.thread_id = thread_id
+    session.add(topic)
+    await session.commit()
+    return topic
+
+
+async def get_topics_by_thread(session: AsyncSession) -> dict[int, list[str]]:
+    """thread_id -> every language_key mapped to it — more than one
+    language can share a thread (e.g. all mobile languages into one
+    "Mobile" topic), and a vacancy matching any of them is the same post
+    for that thread (see GroupTopicPost's (vacancy_id, thread_id) dedup)."""
+    topics_by_thread: dict[int, list[str]] = {}
+    for language_key, thread_id in (await get_group_topic_map(session)).items():
+        topics_by_thread.setdefault(thread_id, []).append(language_key)
+    return topics_by_thread
+
+
+async def get_vacancies_pending_group_post(
+    session: AsyncSession, thread_id: int, language_keys: list[str], limit: int = 20
+) -> list[Vacancy]:
+    posted_subquery = select(GroupTopicPost.vacancy_id).where(GroupTopicPost.thread_id == thread_id)
+    # languages is a JSON array string (e.g. '["python"]') — a plain
+    # substring check per key is enough here without a real JSON column,
+    # and keys are simple ASCII so no escaping concerns.
+    language_match = or_(*(Vacancy.languages.like(f'%"{key}"%') for key in language_keys))
+    result = await session.exec(
+        select(Vacancy)
+        .where(
+            Vacancy.hidden == False,  # noqa: E712
+            Vacancy.id.not_in(posted_subquery),
+            language_match,
+            _details_ready_clause(),
+        )
+        .order_by(Vacancy.id)
+        .limit(limit)
+    )
+    return list(result.all())
+
+
+async def record_group_topic_post(session: AsyncSession, vacancy_id: int, thread_id: int) -> None:
+    session.add(GroupTopicPost(vacancy_id=vacancy_id, thread_id=thread_id))
+    await session.commit()

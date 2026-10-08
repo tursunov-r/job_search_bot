@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     vacancy_retention_days: int = 14
     vacancy_cleanup_interval_seconds: int = 86400
 
+    # Optional — posting new vacancies into a group's forum topics (see
+    # GroupTopic) is disabled entirely until this is set. For a private
+    # supergroup this is "-100" + the internal id from a t.me/c/<id>/<n>
+    # topic link (e.g. id 3880476487 -> group_chat_id -1003880476487).
+    group_chat_id: int | None = None
+    group_broadcast_interval_seconds: int = 180
+
     db_host: str = "postgres"
     db_port: int = 5432
     db_name: str = "jobsbot"

@@ -43,6 +43,8 @@ LANGUAGES: dict[str, Language] = {
         Language("csharp", "C#/.NET", "c#", ("c#", ".net", "dotnet", "asp.net"), categories=("backend",)),
         Language("php", "PHP", "php", ("php",), categories=("backend",)),
         Language("ruby", "Ruby", "ruby", ("ruby", "ruby on rails"), categories=("backend",)),
+        Language("cpp", "C/C++", "c++", ("c++", "c/c++"), categories=("backend",)),
+        Language("sql", "SQL/DBA", "sql developer", ("sql", "pl/sql", "dba"), categories=("backend",)),
         Language("kotlin", "Kotlin", "kotlin", ("kotlin",), categories=("mobile",)),
         # "swift" the word also shows up in banking/fintech text (SWIFT
         # payment transfers) — relying on the title-only match tier (a

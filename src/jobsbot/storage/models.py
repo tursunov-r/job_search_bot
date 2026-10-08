@@ -147,3 +147,33 @@ class AdImpression(SQLModel, table=True):
     subscriber_id: int = Field(foreign_key="subscribers.id")
     sent_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     delivery_status: str = "sent"  # 'sent','failed','blocked'
+
+
+class GroupTopic(SQLModel, table=True):
+    """Maps a languages.py key to a forum-topic thread id in the group
+    configured via GROUP_CHAT_ID — managed in the DB (not .env) since it's
+    operational data that can change without a redeploy, same reasoning as
+    Telegram channels/staff. More than one language can share a thread_id
+    (e.g. all mobile languages posting into one "Mobile" topic)."""
+
+    __tablename__ = "group_topics"
+
+    language_key: str = Field(primary_key=True)
+    thread_id: int
+
+
+class GroupTopicPost(SQLModel, table=True):
+    """One row per (vacancy, thread) actually posted to a group topic — the
+    de-dup record so a vacancy stays a single post per topic even if more
+    than one of its languages maps to the same thread_id (e.g. a vacancy
+    tagged both "kotlin" and "swift" when both share one "Mobile" topic
+    wouldn't otherwise be told that's the same destination), and reruns/
+    restarts don't double-post."""
+
+    __tablename__ = "group_topic_posts"
+    __table_args__ = (UniqueConstraint("vacancy_id", "thread_id"),)
+
+    id: int | None = Field(default=None, primary_key=True)
+    vacancy_id: int = Field(foreign_key="vacancies.id", index=True)
+    thread_id: int
+    posted_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

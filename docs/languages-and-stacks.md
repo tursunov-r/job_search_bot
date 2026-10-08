@@ -23,6 +23,8 @@
 | C#/.NET | `csharp` | Backend | `c#` | `c#`, `.net`, `dotnet`, `asp.net` |
 | PHP | `php` | Backend | `php` | `php` |
 | Ruby | `ruby` | Backend | `ruby` | `ruby`, `ruby on rails` |
+| C/C++ | `cpp` | Backend | `c++` | `c++`, `c/c++` |
+| SQL/DBA | `sql` | Backend | `sql developer` *(голое "sql" на hh.ru даёт шумную нерелевантную выдачу — "sql developer" значительно точнее)* | `sql`, `pl/sql`, `dba` |
 | Kotlin | `kotlin` | Mobile | `kotlin` | `kotlin` |
 | Swift | `swift` | Mobile | `swift` | `swift` *(слово "swift" изредка встречается в банковском контексте — SWIFT-платежи; поскольку это единственное ключевое слово, детект по описанию никогда не срабатывает — см. `_count_matches`, порог "≥2" недостижим с одним словом; риск ложного срабатывания остаётся только для заголовка)* |
 | Dart/Flutter | `dart` | Mobile | `flutter` *(а не `dart` — по факту почти все вакансии ищут именно "Flutter")* | `flutter`, `dart` |

@@ -6,6 +6,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from jobsbot.ads.scheduler import broadcast_due_campaigns
 from jobsbot.bot.dispatcher import build_bot, build_dispatcher
+from jobsbot.bot.group_broadcast import post_new_vacancies_to_topics
 from jobsbot.bot.push import push_new_vacancies
 from jobsbot.config import settings
 from jobsbot.ingestion import habr_adapter, hh_adapter, linkedin_adapter
@@ -179,6 +180,12 @@ async def main() -> None:
         push_new_vacancies,
         "interval",
         seconds=settings.vacancy_push_interval_seconds,
+        args=[bot],
+    )
+    scheduler.add_job(
+        post_new_vacancies_to_topics,
+        "interval",
+        seconds=settings.group_broadcast_interval_seconds,
         args=[bot],
     )
     scheduler.add_job(
