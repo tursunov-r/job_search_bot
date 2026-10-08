@@ -9,7 +9,7 @@ from jobsbot.bot.dispatcher import build_bot, build_dispatcher
 from jobsbot.bot.group_broadcast import post_new_vacancies_to_topics
 from jobsbot.bot.push import push_new_vacancies
 from jobsbot.config import settings
-from jobsbot.ingestion import habr_adapter, hh_adapter, linkedin_adapter
+from jobsbot.ingestion import geekjob_adapter, habr_adapter, hh_adapter, linkedin_adapter
 from jobsbot.ingestion.telegram_poller import TelegramChannelPoller
 from jobsbot.processing.languages import LANGUAGES
 from jobsbot.processing.pipeline import ingest
@@ -130,6 +130,48 @@ async def poll_habr() -> None:
                 await asyncio.sleep(habr_adapter.DETAIL_FETCH_DELAY_SECONDS)
 
 
+async def poll_geekjob() -> None:
+    # No search-term loop here, unlike HH/Habr — geekjob's keyword search is
+    # client-side only (see geekjob_adapter docstring), so this is a single
+    # mixed-topic feed, relevance decided by detect_languages() inside
+    # ingest() (no language_hint), same as a Telegram channel.
+    try:
+        raw_vacancies = await geekjob_adapter.fetch_vacancies()
+    except Exception:
+        logger.exception("Geekjob polling failed")
+        return
+
+    new_vacancies = []
+    async with async_session() as session:
+        source = await get_or_create_source(session, "geekjob", "geekjob_search", "Geekjob.ru")
+        for raw in raw_vacancies:
+            vacancy = await ingest(session, raw, source.id, needs_details=True)
+            if vacancy:
+                new_vacancies.append(vacancy)
+    logger.info("Geekjob poll: fetched %d, inserted %d new", len(raw_vacancies), len(new_vacancies))
+
+    if not new_vacancies:
+        return
+
+    async with httpx.AsyncClient(
+        headers={"User-Agent": geekjob_adapter.USER_AGENT}, timeout=15.0, follow_redirects=True
+    ) as client:
+        for i, vacancy in enumerate(new_vacancies):
+            if not vacancy.url:
+                continue
+            details = await geekjob_adapter.fetch_vacancy_details(client, vacancy.url)
+            async with async_session() as session:
+                await update_vacancy_details(
+                    session,
+                    vacancy.id,
+                    description=details.description if details else None,
+                    work_format=details.work_format if details else None,
+                    experience=details.experience if details else None,
+                )
+            if i < len(new_vacancies) - 1:
+                await asyncio.sleep(geekjob_adapter.DETAIL_FETCH_DELAY_SECONDS)
+
+
 async def poll_linkedin() -> None:
     try:
         raw_vacancies = await linkedin_adapter.fetch_vacancies()
@@ -170,6 +212,7 @@ async def main() -> None:
     scheduler = AsyncIOScheduler()
     scheduler.add_job(poll_hh, "interval", seconds=settings.hh_poll_interval_seconds)
     scheduler.add_job(poll_habr, "interval", seconds=settings.habr_poll_interval_seconds)
+    scheduler.add_job(poll_geekjob, "interval", seconds=settings.geekjob_poll_interval_seconds)
     if settings.linkedin_enabled:
         scheduler.add_job(poll_linkedin, "interval", seconds=settings.linkedin_poll_interval_seconds)
     if telegram_poller is not None:
@@ -212,6 +255,7 @@ async def main() -> None:
 
     _track(asyncio.create_task(poll_hh()))
     _track(asyncio.create_task(poll_habr()))
+    _track(asyncio.create_task(poll_geekjob()))
     if settings.linkedin_enabled:
         _track(asyncio.create_task(poll_linkedin()))
     if telegram_poller is not None:

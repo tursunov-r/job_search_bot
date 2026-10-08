@@ -21,6 +21,8 @@ class Settings(BaseSettings):
 
     habr_poll_interval_seconds: int = 600
 
+    geekjob_poll_interval_seconds: int = 600
+
     linkedin_enabled: bool = False
     linkedin_poll_interval_seconds: int = 3600
 

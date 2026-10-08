@@ -12,10 +12,11 @@ baselined as already-posted for the group-topic broadcast (see
 backfill_group_topic_baseline.py) — rather than resetting either to
 zero/empty, since this is a data-quality fix, not new content.
 
-Only re-parses the pollable sources (hh.ru, Habr Career, LinkedIn if
-enabled) — Telegram channels aren't replayed, since that poller only ever
-fetches messages newer than its stored per-channel cursor, not history;
-anything that came in from a channel is gone for good once wiped here.
+Only re-parses the pollable sources (hh.ru, Habr Career, Geekjob.ru,
+LinkedIn if enabled) — Telegram channels aren't replayed, since that
+poller only ever fetches messages newer than its stored per-channel
+cursor, not history; anything that came in from a channel is gone for
+good once wiped here.
 
 Run this on the Raspberry Pi, inside the bot's container:
 
@@ -28,7 +29,7 @@ from sqlmodel import delete, select, update
 
 from backfill_group_topic_baseline import BASELINE_SQL
 from jobsbot.config import settings
-from jobsbot.main import poll_habr, poll_hh, poll_linkedin
+from jobsbot.main import poll_geekjob, poll_habr, poll_hh, poll_linkedin
 from jobsbot.storage.db import async_session, init_db
 from jobsbot.storage.models import GroupTopicPost, Subscriber, Vacancy, VacancyDelivery, VacancyReport
 
@@ -81,6 +82,9 @@ async def main() -> None:
 
     logger.info("Re-parsing Habr Career...")
     await poll_habr()
+
+    logger.info("Re-parsing Geekjob.ru...")
+    await poll_geekjob()
 
     if settings.linkedin_enabled:
         logger.info("Re-parsing LinkedIn...")
