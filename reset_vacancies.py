@@ -6,11 +6,11 @@ whatever bad/incomplete data is already stored with freshly parsed data
 using the current code, instead of waiting for old rows to drift out of
 relevance on their own.
 
-Subscribers are NOT resent anything: their delivery cursor is advanced to
-"caught up" with the freshly re-inserted vacancies rather than reset to
-zero, since this is a data-quality fix, not new content — resetting the
-cursor to zero would re-flood every active subscriber with the entire
-history.
+Nothing gets resent: subscriber DM cursors are advanced to "caught up"
+with the freshly re-inserted vacancies, and every re-parsed vacancy is
+baselined as already-posted for the group-topic broadcast (see
+backfill_group_topic_baseline.py) — rather than resetting either to
+zero/empty, since this is a data-quality fix, not new content.
 
 Only re-parses the pollable sources (hh.ru, Habr Career, LinkedIn if
 enabled) — Telegram channels aren't replayed, since that poller only ever
@@ -26,10 +26,11 @@ import logging
 
 from sqlmodel import delete, select, update
 
+from backfill_group_topic_baseline import BASELINE_SQL
 from jobsbot.config import settings
 from jobsbot.main import poll_habr, poll_hh, poll_linkedin
 from jobsbot.storage.db import async_session, init_db
-from jobsbot.storage.models import Subscriber, Vacancy, VacancyDelivery
+from jobsbot.storage.models import GroupTopicPost, Subscriber, Vacancy, VacancyDelivery, VacancyReport
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -40,10 +41,12 @@ async def wipe_vacancies() -> None:
         # Children referencing vacancies.id first (no ON DELETE CASCADE),
         # then the vacancies themselves.
         await session.execute(delete(VacancyDelivery))
+        await session.execute(delete(VacancyReport))
+        await session.execute(delete(GroupTopicPost))
         await session.execute(update(Subscriber).values(last_vacancy_sent_id=None))
         await session.execute(delete(Vacancy))
         await session.commit()
-    logger.info("Wiped all vacancies, deliveries, and subscriber cursors.")
+    logger.info("Wiped all vacancies, deliveries, reports, group-topic posts, and subscriber cursors.")
 
 
 async def catch_up_subscribers() -> None:
@@ -55,6 +58,16 @@ async def catch_up_subscribers() -> None:
         await session.execute(update(Subscriber).values(last_vacancy_sent_id=latest_id))
         await session.commit()
     logger.info("Advanced all subscriber cursors to vacancy #%s (no resend of re-parsed data).", latest_id)
+
+
+async def baseline_group_topics() -> None:
+    """Same reasoning as catch_up_subscribers, but for the group-topic
+    broadcast: every freshly re-parsed vacancy would otherwise look brand
+    new to it and get flooded out to every mapped topic from scratch."""
+    async with async_session() as session:
+        result = await session.execute(BASELINE_SQL)
+        await session.commit()
+    logger.info("Baselined %d (vacancy, topic) rows (no resend of re-parsed data).", result.rowcount)
 
 
 async def main() -> None:
@@ -74,6 +87,7 @@ async def main() -> None:
         await poll_linkedin()
 
     await catch_up_subscribers()
+    await baseline_group_topics()
     logger.info("Done.")
 
 
