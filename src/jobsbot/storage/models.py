@@ -74,6 +74,7 @@ class Subscriber(SQLModel, table=True):
     skills: str = Field(default="[]")  # JSON array of stack_tags keys the subscriber selected
     languages: str = Field(default="[]")  # JSON array of languages.py keys the subscriber selected
     city: str | None = None  # free-text, matched against Vacancy.location; None = no city filter
+    work_formats: str = Field(default="[]")  # JSON array of work_formats.py keys; [] = no filter
 
 
 class VacancyDelivery(SQLModel, table=True):

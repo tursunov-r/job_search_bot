@@ -253,6 +253,16 @@ async def update_subscriber_city(session: AsyncSession, subscriber: Subscriber, 
     return subscriber
 
 
+async def update_subscriber_work_formats(
+    session: AsyncSession, subscriber: Subscriber, work_formats: list[str]
+) -> Subscriber:
+    subscriber.work_formats = json.dumps(sorted(set(work_formats)))
+    session.add(subscriber)
+    await session.commit()
+    await session.refresh(subscriber)
+    return subscriber
+
+
 async def update_vacancy_details(
     session: AsyncSession,
     vacancy_id: int,

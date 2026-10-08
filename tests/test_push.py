@@ -1,4 +1,4 @@
-from jobsbot.bot.push import _matches_city
+from jobsbot.bot.push import _matches_city, _matches_work_format
 from jobsbot.storage.models import Vacancy
 
 
@@ -52,3 +52,32 @@ def test_hybrid_without_remote_hint_still_requires_city_match():
     vacancy = _vacancy(location="Казань", work_format="гибрид")
     assert _matches_city(vacancy, "Москва") is False
     assert _matches_city(vacancy, "Казань") is True
+
+
+def test_no_work_format_filter_matches_everything():
+    vacancy = _vacancy(work_format="на месте работодателя")
+    assert _matches_work_format(vacancy, []) is True
+
+
+def test_work_format_matches_selected_category():
+    vacancy = _vacancy(work_format="удалённо")
+    assert _matches_work_format(vacancy, ["remote"]) is True
+    assert _matches_work_format(vacancy, ["office"]) is False
+
+
+def test_work_format_matches_any_of_several_selected():
+    vacancy = _vacancy(work_format="гибрид")
+    assert _matches_work_format(vacancy, ["remote", "hybrid"]) is True
+
+
+def test_work_format_vacancy_with_multiple_categories():
+    # Employer offering either office or remote — should satisfy either preference.
+    vacancy = _vacancy(work_format="на месте работодателя, удалённо или гибрид")
+    assert _matches_work_format(vacancy, ["office"]) is True
+    assert _matches_work_format(vacancy, ["remote"]) is True
+    assert _matches_work_format(vacancy, ["hybrid"]) is True
+
+
+def test_work_format_unknown_fails_when_filter_set():
+    vacancy = _vacancy(work_format=None)
+    assert _matches_work_format(vacancy, ["remote"]) is False

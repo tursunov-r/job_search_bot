@@ -7,6 +7,7 @@ from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from jobsbot.processing.stack_tags import matches_stack
+from jobsbot.processing.work_formats import categorize as categorize_work_format
 from jobsbot.storage.db import async_session
 from jobsbot.storage.models import Subscriber, Vacancy
 from jobsbot.storage.repo import (
@@ -73,29 +74,41 @@ def _json_list(value: str) -> list[str]:
         return []
 
 
-def _is_remote_friendly(vacancy: Vacancy) -> bool:
-    """Remote-ish vacancies bypass the city filter entirely — some have no
-    location at all (Habr's "Можно удалённо" chip), others keep the
-    employer's city even though the role itself is remote (HH), so matching
-    location literally would wrongly exclude genuinely remote postings."""
-    return bool(vacancy.work_format and "удал" in vacancy.work_format.lower())
-
-
 def _matches_city(vacancy: Vacancy, city: str | None) -> bool:
     if not city:
         return True
-    if _is_remote_friendly(vacancy):
+    if "remote" in categorize_work_format(vacancy.work_format):
+        # Remote-ish vacancies bypass the city filter entirely — some have
+        # no location at all (Habr's "Можно удалённо" chip), others keep
+        # the employer's city even though the role itself is remote (HH),
+        # so matching location literally would wrongly exclude genuinely
+        # remote postings.
         return True
     return bool(vacancy.location) and vacancy.location.strip().lower() == city.strip().lower()
 
 
+def _matches_work_format(vacancy: Vacancy, selected_formats: list[str]) -> bool:
+    if not selected_formats:
+        return True
+    return bool(categorize_work_format(vacancy.work_format) & set(selected_formats))
+
+
 def _vacancy_matches(
-    vacancy: Vacancy, selected_languages: list[str], selected_skills: list[str], city: str | None = None
+    vacancy: Vacancy,
+    selected_languages: list[str],
+    selected_skills: list[str],
+    city: str | None = None,
+    work_formats: list[str] | None = None,
 ) -> bool:
     vacancy_languages = _json_list(vacancy.languages)
     language_ok = not selected_languages or any(lang in selected_languages for lang in vacancy_languages)
     stack_ok = matches_stack(vacancy.title, vacancy.description, selected_skills)
-    return language_ok and stack_ok and _matches_city(vacancy, city)
+    return (
+        language_ok
+        and stack_ok
+        and _matches_city(vacancy, city)
+        and _matches_work_format(vacancy, work_formats or [])
+    )
 
 
 async def _deliver_vacancy(bot: Bot, telegram_user_id: int, vacancy: Vacancy) -> None:
@@ -150,6 +163,7 @@ async def push_new_vacancies(bot: Bot) -> None:
 
             selected_languages = _json_list(subscriber.languages)
             selected_skills = _json_list(subscriber.skills)
+            selected_work_formats = _json_list(subscriber.work_formats)
             cursor_id = subscriber.last_vacancy_sent_id
             delivered_ids = await get_delivered_vacancy_ids(
                 session, subscriber.id, [v.id for v in vacancies]
@@ -162,7 +176,9 @@ async def push_new_vacancies(bot: Bot) -> None:
                     cursor_id = vacancy.id
                     continue
 
-                if not _vacancy_matches(vacancy, selected_languages, selected_skills, subscriber.city):
+                if not _vacancy_matches(
+                    vacancy, selected_languages, selected_skills, subscriber.city, selected_work_formats
+                ):
                     # Skipped on purpose (doesn't match the subscriber's filters) —
                     # still advance the cursor so it isn't re-checked every cycle.
                     cursor_id = vacancy.id
@@ -198,10 +214,13 @@ async def resend_matching_backlog(bot: Bot, subscriber: Subscriber) -> int:
         candidates = await get_undelivered_recent_vacancies(session, subscriber.id)
         selected_languages = _json_list(subscriber.languages)
         selected_skills = _json_list(subscriber.skills)
+        selected_work_formats = _json_list(subscriber.work_formats)
 
         sent = 0
         for vacancy in candidates:
-            if not _vacancy_matches(vacancy, selected_languages, selected_skills, subscriber.city):
+            if not _vacancy_matches(
+                vacancy, selected_languages, selected_skills, subscriber.city, selected_work_formats
+            ):
                 continue
             try:
                 await _deliver_vacancy(bot, subscriber.telegram_user_id, vacancy)

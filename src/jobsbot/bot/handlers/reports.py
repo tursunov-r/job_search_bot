@@ -6,7 +6,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
-from jobsbot.bot.handlers.subscriber_menu import BTN_ADD_STACK, BTN_CITY, BTN_STOP, BTN_VIEW
+from jobsbot.bot.handlers.subscriber_menu import MENU_BUTTON_TEXTS
 from jobsbot.bot.permissions import has_permission, is_super_admin
 from jobsbot.config import settings
 from jobsbot.storage.db import async_session
@@ -92,10 +92,7 @@ async def handle_report_button(callback: CallbackQuery, state: FSMContext) -> No
     )
 
 
-_MENU_BUTTON_TEXTS = {BTN_ADD_STACK, BTN_CITY, BTN_VIEW, BTN_STOP}
-
-
-@router.message(ReportFSM.waiting_comment, F.text.not_in(_MENU_BUTTON_TEXTS))
+@router.message(ReportFSM.waiting_comment, F.text.not_in(MENU_BUTTON_TEXTS))
 async def handle_report_comment(message: Message, state: FSMContext) -> None:
     if message.from_user is None:
         return

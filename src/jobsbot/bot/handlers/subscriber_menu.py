@@ -16,6 +16,7 @@ from aiogram.types import (
 from jobsbot.bot.push import resend_matching_backlog
 from jobsbot.processing.languages import LANGUAGES
 from jobsbot.processing.stack_tags import STACK_TAGS, visible_tag_keys
+from jobsbot.processing.work_formats import WORK_FORMATS
 from jobsbot.storage.db import async_session
 from jobsbot.storage.repo import (
     get_or_create_subscriber,
@@ -24,6 +25,7 @@ from jobsbot.storage.repo import (
     update_subscriber_city,
     update_subscriber_languages,
     update_subscriber_skills,
+    update_subscriber_work_formats,
 )
 
 logger = logging.getLogger(__name__)
@@ -31,12 +33,18 @@ router = Router()
 
 BTN_ADD_STACK = "➕ Добавить стек"
 BTN_CITY = "🏙 Город"
+BTN_WORK_FORMAT = "🧭 Формат работы"
 BTN_VIEW = "👀 Смотреть вакансии"
 BTN_STOP = "⏸ Остановить рассылку"
 
 CALLBACK_PREFIX = "addstack"
+WORK_FORMAT_CALLBACK_PREFIX = "workformat"
 
 CITY_CLEAR_WORDS = {"-", "везде", "все", "всё"}
+
+# Used to keep other menu buttons from being swallowed as free-text input
+# by whichever FSM state happens to be waiting (city, report comment, etc.)
+MENU_BUTTON_TEXTS = {BTN_ADD_STACK, BTN_CITY, BTN_WORK_FORMAT, BTN_VIEW, BTN_STOP}
 
 
 class StackFSM(StatesGroup):
@@ -47,13 +55,17 @@ class CityFSM(StatesGroup):
     waiting_input = State()
 
 
+class WorkFormatFSM(StatesGroup):
+    picking = State()
+
+
 def build_menu_keyboard(extra_rows: list[list[KeyboardButton]] | None = None) -> ReplyKeyboardMarkup:
     # Telegram only ever shows one reply keyboard at a time, so staff/admin
     # rows (if any) get appended here rather than sent as a separate
     # keyboard via /admin — otherwise picking one would silently replace
     # the other instead of the two coexisting.
     rows = [
-        [KeyboardButton(text=BTN_ADD_STACK), KeyboardButton(text=BTN_CITY)],
+        [KeyboardButton(text=BTN_ADD_STACK), KeyboardButton(text=BTN_CITY), KeyboardButton(text=BTN_WORK_FORMAT)],
         [KeyboardButton(text=BTN_VIEW), KeyboardButton(text=BTN_STOP)],
     ]
     rows.extend(extra_rows or [])
@@ -305,10 +317,7 @@ async def handle_city_button(message: Message, state: FSMContext) -> None:
     await message.answer(text)
 
 
-_MENU_BUTTON_TEXTS = {BTN_ADD_STACK, BTN_CITY, BTN_VIEW, BTN_STOP}
-
-
-@router.message(CityFSM.waiting_input, F.text.not_in(_MENU_BUTTON_TEXTS))
+@router.message(CityFSM.waiting_input, F.text.not_in(MENU_BUTTON_TEXTS))
 async def handle_city_input(message: Message, state: FSMContext) -> None:
     if message.from_user is None or not message.text:
         return
@@ -328,6 +337,87 @@ async def handle_city_input(message: Message, state: FSMContext) -> None:
         await message.answer(f"Готово — буду присылать вакансии из города «{city}» (плюс удалённые).")
     else:
         await message.answer("Готово — фильтр по городу убран, присылаю вакансии из всех городов.")
+
+
+def _build_work_format_keyboard(chosen: list[str]) -> InlineKeyboardMarkup:
+    rows = []
+    for key, label in WORK_FORMATS.items():
+        checked = "✅" if key in chosen else "⬜"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{checked} {label}", callback_data=f"{WORK_FORMAT_CALLBACK_PREFIX}:toggle:{key}"
+                )
+            ]
+        )
+    rows.append(
+        [InlineKeyboardButton(text="✅ Применить", callback_data=f"{WORK_FORMAT_CALLBACK_PREFIX}:apply")]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@router.message(F.text == BTN_WORK_FORMAT)
+async def handle_work_format_button(message: Message, state: FSMContext) -> None:
+    if message.from_user is None:
+        return
+    await _delete_quietly(message)
+
+    async with async_session() as session:
+        subscriber = await get_or_create_subscriber(
+            session, telegram_user_id=message.from_user.id, username=message.from_user.username
+        )
+        chosen = _json_list(subscriber.work_formats)
+
+    await state.set_state(WorkFormatFSM.picking)
+    await state.update_data(chosen=chosen)
+    await message.answer(
+        "Выбери желаемый формат работы (можно несколько, или ничего — тогда без фильтра):",
+        reply_markup=_build_work_format_keyboard(chosen),
+    )
+
+
+@router.callback_query(WorkFormatFSM.picking, F.data.startswith(f"{WORK_FORMAT_CALLBACK_PREFIX}:toggle:"))
+async def handle_toggle_work_format(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.data is None:
+        await callback.answer()
+        return
+
+    key = callback.data.split(":")[2]
+    data = await state.get_data()
+    chosen = set(data.get("chosen", []))
+    if key in chosen:
+        chosen.discard(key)
+    else:
+        chosen.add(key)
+    await state.update_data(chosen=list(chosen))
+
+    await callback.message.edit_reply_markup(reply_markup=_build_work_format_keyboard(list(chosen)))
+    await callback.answer()
+
+
+@router.callback_query(WorkFormatFSM.picking, F.data == f"{WORK_FORMAT_CALLBACK_PREFIX}:apply")
+async def handle_apply_work_format(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user is None:
+        await callback.answer()
+        return
+
+    data = await state.get_data()
+    chosen = list(set(data.get("chosen", [])))
+    await state.clear()
+
+    async with async_session() as session:
+        subscriber = await get_or_create_subscriber(
+            session, telegram_user_id=callback.from_user.id, username=callback.from_user.username
+        )
+        await update_subscriber_work_formats(session, subscriber, chosen)
+
+    if chosen:
+        labels = ", ".join(WORK_FORMATS[key] for key in chosen)
+        text = f"Готово — буду присылать вакансии с форматом: {labels}."
+    else:
+        text = "Готово — фильтр по формату работы убран, присылаю вакансии любого формата."
+    await callback.message.edit_text(text)
+    await callback.answer()
 
 
 @router.message(F.text == BTN_VIEW)
