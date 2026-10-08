@@ -237,6 +237,14 @@ async def update_subscriber_languages(
     return subscriber
 
 
+async def update_subscriber_city(session: AsyncSession, subscriber: Subscriber, city: str | None) -> Subscriber:
+    subscriber.city = city
+    session.add(subscriber)
+    await session.commit()
+    await session.refresh(subscriber)
+    return subscriber
+
+
 async def update_vacancy_details(
     session: AsyncSession,
     vacancy_id: int,

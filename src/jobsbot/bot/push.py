@@ -73,11 +73,29 @@ def _json_list(value: str) -> list[str]:
         return []
 
 
-def _vacancy_matches(vacancy: Vacancy, selected_languages: list[str], selected_skills: list[str]) -> bool:
+def _is_remote_friendly(vacancy: Vacancy) -> bool:
+    """Remote-ish vacancies bypass the city filter entirely — some have no
+    location at all (Habr's "Можно удалённо" chip), others keep the
+    employer's city even though the role itself is remote (HH), so matching
+    location literally would wrongly exclude genuinely remote postings."""
+    return bool(vacancy.work_format and "удал" in vacancy.work_format.lower())
+
+
+def _matches_city(vacancy: Vacancy, city: str | None) -> bool:
+    if not city:
+        return True
+    if _is_remote_friendly(vacancy):
+        return True
+    return bool(vacancy.location) and vacancy.location.strip().lower() == city.strip().lower()
+
+
+def _vacancy_matches(
+    vacancy: Vacancy, selected_languages: list[str], selected_skills: list[str], city: str | None = None
+) -> bool:
     vacancy_languages = _json_list(vacancy.languages)
     language_ok = not selected_languages or any(lang in selected_languages for lang in vacancy_languages)
     stack_ok = matches_stack(vacancy.title, vacancy.description, selected_skills)
-    return language_ok and stack_ok
+    return language_ok and stack_ok and _matches_city(vacancy, city)
 
 
 async def _deliver_vacancy(bot: Bot, telegram_user_id: int, vacancy: Vacancy) -> None:
@@ -137,7 +155,7 @@ async def push_new_vacancies(bot: Bot) -> None:
                     cursor_id = vacancy.id
                     continue
 
-                if not _vacancy_matches(vacancy, selected_languages, selected_skills):
+                if not _vacancy_matches(vacancy, selected_languages, selected_skills, subscriber.city):
                     # Skipped on purpose (doesn't match the subscriber's filters) —
                     # still advance the cursor so it isn't re-checked every cycle.
                     cursor_id = vacancy.id
@@ -176,7 +194,7 @@ async def resend_matching_backlog(bot: Bot, subscriber: Subscriber) -> int:
 
         sent = 0
         for vacancy in candidates:
-            if not _vacancy_matches(vacancy, selected_languages, selected_skills):
+            if not _vacancy_matches(vacancy, selected_languages, selected_skills, subscriber.city):
                 continue
             try:
                 await _deliver_vacancy(bot, subscriber.telegram_user_id, vacancy)

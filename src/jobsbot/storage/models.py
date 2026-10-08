@@ -69,6 +69,7 @@ class Subscriber(SQLModel, table=True):
     last_interaction_at: datetime | None = None
     skills: str = Field(default="[]")  # JSON array of stack_tags keys the subscriber selected
     languages: str = Field(default="[]")  # JSON array of languages.py keys the subscriber selected
+    city: str | None = None  # free-text, matched against Vacancy.location; None = no city filter
 
 
 class VacancyDelivery(SQLModel, table=True):

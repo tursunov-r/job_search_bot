@@ -21,6 +21,7 @@ from jobsbot.storage.repo import (
     get_or_create_subscriber,
     pause_subscriber_by_telegram_id,
     resume_subscriber_by_telegram_id,
+    update_subscriber_city,
     update_subscriber_languages,
     update_subscriber_skills,
 )
@@ -29,14 +30,21 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 BTN_ADD_STACK = "➕ Добавить стек"
+BTN_CITY = "🏙 Город"
 BTN_VIEW = "👀 Смотреть вакансии"
 BTN_STOP = "⏸ Остановить рассылку"
 
 CALLBACK_PREFIX = "addstack"
 
+CITY_CLEAR_WORDS = {"-", "везде", "все", "всё"}
+
 
 class StackFSM(StatesGroup):
     picking_tags = State()
+
+
+class CityFSM(StatesGroup):
+    waiting_input = State()
 
 
 def build_menu_keyboard(extra_rows: list[list[KeyboardButton]] | None = None) -> ReplyKeyboardMarkup:
@@ -45,7 +53,7 @@ def build_menu_keyboard(extra_rows: list[list[KeyboardButton]] | None = None) ->
     # keyboard via /admin — otherwise picking one would silently replace
     # the other instead of the two coexisting.
     rows = [
-        [KeyboardButton(text=BTN_ADD_STACK)],
+        [KeyboardButton(text=BTN_ADD_STACK), KeyboardButton(text=BTN_CITY)],
         [KeyboardButton(text=BTN_VIEW), KeyboardButton(text=BTN_STOP)],
     ]
     rows.extend(extra_rows or [])
@@ -268,6 +276,58 @@ async def handle_apply_stack(callback: CallbackQuery, state: FSMContext) -> None
         f"чтобы добавить другой язык, или «{BTN_VIEW}», чтобы начать получать вакансии."
     )
     await callback.answer()
+
+
+@router.message(F.text == BTN_CITY)
+async def handle_city_button(message: Message, state: FSMContext) -> None:
+    if message.from_user is None:
+        return
+    await _delete_quietly(message)
+    await state.set_state(CityFSM.waiting_input)
+
+    async with async_session() as session:
+        subscriber = await get_or_create_subscriber(
+            session, telegram_user_id=message.from_user.id, username=message.from_user.username
+        )
+        current_city = subscriber.city
+
+    if current_city:
+        text = (
+            f"Сейчас фильтр по городу: «{current_city}».\n"
+            f"Напиши новый город, или «-», чтобы убрать фильтр (будут приходить вакансии из всех городов)."
+        )
+    else:
+        text = (
+            "Фильтр по городу не задан — приходят вакансии из всех городов.\n"
+            "Напиши город, чтобы получать только вакансии из него "
+            "(удалённые вакансии приходят всегда, независимо от города)."
+        )
+    await message.answer(text)
+
+
+_MENU_BUTTON_TEXTS = {BTN_ADD_STACK, BTN_CITY, BTN_VIEW, BTN_STOP}
+
+
+@router.message(CityFSM.waiting_input, F.text.not_in(_MENU_BUTTON_TEXTS))
+async def handle_city_input(message: Message, state: FSMContext) -> None:
+    if message.from_user is None or not message.text:
+        return
+    await _delete_quietly(message)
+    await state.clear()
+
+    text = message.text.strip()
+    city = None if text.lower() in CITY_CLEAR_WORDS else text
+
+    async with async_session() as session:
+        subscriber = await get_or_create_subscriber(
+            session, telegram_user_id=message.from_user.id, username=message.from_user.username
+        )
+        await update_subscriber_city(session, subscriber, city)
+
+    if city:
+        await message.answer(f"Готово — буду присылать вакансии из города «{city}» (плюс удалённые).")
+    else:
+        await message.answer("Готово — фильтр по городу убран, присылаю вакансии из всех городов.")
 
 
 @router.message(F.text == BTN_VIEW)
