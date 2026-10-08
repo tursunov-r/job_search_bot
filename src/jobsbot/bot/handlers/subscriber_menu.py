@@ -13,6 +13,7 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
 )
 
+from jobsbot.bot.handlers.admin_menu import get_admin_menu_rows
 from jobsbot.bot.push import resend_matching_backlog
 from jobsbot.processing.languages import CATEGORIES, LANGUAGES, languages_in_category
 from jobsbot.processing.stack_tags import STACK_TAGS, visible_tag_keys
@@ -70,6 +71,16 @@ def build_menu_keyboard(extra_rows: list[list[KeyboardButton]] | None = None) ->
     ]
     rows.extend(extra_rows or [])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+
+
+async def current_menu_keyboard(telegram_user_id: int) -> ReplyKeyboardMarkup:
+    """Always rebuilt from the current button set (+ live admin rows)
+    rather than cached anywhere — every plain-text reply in this module
+    passes this as reply_markup, so a subscriber who's never run /start
+    again still sees new buttons the next time the bot answers them,
+    instead of being stuck on whatever keyboard they got last."""
+    admin_rows = await get_admin_menu_rows(telegram_user_id)
+    return build_menu_keyboard(admin_rows)
 
 
 def _json_list(value: str) -> list[str]:
@@ -323,6 +334,11 @@ async def handle_apply_stack(callback: CallbackQuery, state: FSMContext) -> None
         f"Готово — {lang_label} добавлен в твой профиль. Нажми «{BTN_ADD_STACK}» ещё раз, "
         f"чтобы добавить другой язык, или «{BTN_VIEW}», чтобы начать получать вакансии."
     )
+    # edit_text can't attach a reply keyboard (Telegram only allows an
+    # inline one there) — a short follow-up is the only way to refresh it.
+    await callback.message.answer(
+        "Меню ниже обновлено.", reply_markup=await current_menu_keyboard(callback.from_user.id)
+    )
     await callback.answer()
 
 
@@ -350,7 +366,7 @@ async def handle_city_button(message: Message, state: FSMContext) -> None:
             "Напиши город, чтобы получать только вакансии из него "
             "(удалённые вакансии приходят всегда, независимо от города)."
         )
-    await message.answer(text)
+    await message.answer(text, reply_markup=await current_menu_keyboard(message.from_user.id))
 
 
 @router.message(CityFSM.waiting_input, F.text.not_in(MENU_BUTTON_TEXTS))
@@ -369,10 +385,11 @@ async def handle_city_input(message: Message, state: FSMContext) -> None:
         )
         await update_subscriber_city(session, subscriber, city)
 
+    keyboard = await current_menu_keyboard(message.from_user.id)
     if city:
-        await message.answer(f"Готово — буду присылать вакансии из города «{city}» (плюс удалённые).")
+        await message.answer(f"Готово — буду присылать вакансии из города «{city}» (плюс удалённые).", reply_markup=keyboard)
     else:
-        await message.answer("Готово — фильтр по городу убран, присылаю вакансии из всех городов.")
+        await message.answer("Готово — фильтр по городу убран, присылаю вакансии из всех городов.", reply_markup=keyboard)
 
 
 def _build_work_format_keyboard(chosen: list[str]) -> InlineKeyboardMarkup:
@@ -453,6 +470,11 @@ async def handle_apply_work_format(callback: CallbackQuery, state: FSMContext) -
     else:
         text = "Готово — фильтр по формату работы убран, присылаю вакансии любого формата."
     await callback.message.edit_text(text)
+    # edit_text can't attach a reply keyboard (Telegram only allows an
+    # inline one there) — a short follow-up is the only way to refresh it.
+    await callback.message.answer(
+        "Меню ниже обновлено.", reply_markup=await current_menu_keyboard(callback.from_user.id)
+    )
     await callback.answer()
 
 
@@ -468,20 +490,24 @@ async def handle_view_vacancies(message: Message) -> None:
         )
         subscriber = await resume_subscriber_by_telegram_id(session, message.from_user.id)
 
+    keyboard = await current_menu_keyboard(message.from_user.id)
     if subscriber is None:
-        await message.answer("Сначала напиши /start")
+        await message.answer("Сначала напиши /start", reply_markup=keyboard)
         return
     if subscriber.status == "blocked":
-        await message.answer("Доступ ограничен администратором.")
+        await message.answer("Доступ ограничен администратором.", reply_markup=keyboard)
         return
 
     sent = await resend_matching_backlog(message.bot, subscriber)
     if sent:
-        await message.answer(f"Рассылка включена. Нашёл и отправил {sent} подходящих вакансий за неделю.")
+        await message.answer(
+            f"Рассылка включена. Нашёл и отправил {sent} подходящих вакансий за неделю.", reply_markup=keyboard
+        )
     else:
         await message.answer(
             "Рассылка включена. Подходящих вакансий за последнюю неделю пока нет — "
-            "пришлю, как только появятся новые."
+            "пришлю, как только появятся новые.",
+            reply_markup=keyboard,
         )
 
 
@@ -497,4 +523,7 @@ async def handle_stop_broadcast(message: Message) -> None:
         )
         await pause_subscriber_by_telegram_id(session, message.from_user.id)
 
-    await message.answer(f"Рассылка остановлена. Включить снова — кнопка «{BTN_VIEW}».")
+    await message.answer(
+        f"Рассылка остановлена. Включить снова — кнопка «{BTN_VIEW}».",
+        reply_markup=await current_menu_keyboard(message.from_user.id),
+    )

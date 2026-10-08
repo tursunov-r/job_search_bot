@@ -6,7 +6,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
-from jobsbot.bot.handlers.subscriber_menu import MENU_BUTTON_TEXTS
+from jobsbot.bot.handlers.subscriber_menu import MENU_BUTTON_TEXTS, current_menu_keyboard
 from jobsbot.bot.permissions import has_permission, is_super_admin
 from jobsbot.config import settings
 from jobsbot.storage.db import async_session
@@ -119,7 +119,8 @@ async def handle_report_comment(message: Message, state: FSMContext) -> None:
         await set_vacancy_hidden(session, vacancy_id, True)
 
     await message.answer(
-        "Спасибо, жалоба отправлена на проверку — пока админ не разберётся, эту вакансию никому не покажем."
+        "Спасибо, жалоба отправлена на проверку — пока админ не разберётся, эту вакансию никому не покажем.",
+        reply_markup=await current_menu_keyboard(message.from_user.id),
     )
     await _notify_admins(message.bot, report, vacancy, message.from_user.username)
 

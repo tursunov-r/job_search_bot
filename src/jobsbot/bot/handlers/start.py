@@ -2,8 +2,7 @@ from aiogram import Router
 from aiogram.filters import CommandStart
 from aiogram.types import Message
 
-from jobsbot.bot.handlers.admin_menu import get_admin_menu_rows
-from jobsbot.bot.handlers.subscriber_menu import BTN_ADD_STACK, BTN_VIEW, build_menu_keyboard
+from jobsbot.bot.handlers.subscriber_menu import BTN_ADD_STACK, BTN_VIEW, current_menu_keyboard
 from jobsbot.storage.db import async_session
 from jobsbot.storage.repo import get_or_create_subscriber
 
@@ -27,5 +26,4 @@ async def handle_start(message: Message) -> None:
         await get_or_create_subscriber(
             session, telegram_user_id=message.from_user.id, username=message.from_user.username
         )
-    admin_rows = await get_admin_menu_rows(message.from_user.id)
-    await message.answer(WELCOME_TEXT, reply_markup=build_menu_keyboard(admin_rows))
+    await message.answer(WELCOME_TEXT, reply_markup=await current_menu_keyboard(message.from_user.id))
