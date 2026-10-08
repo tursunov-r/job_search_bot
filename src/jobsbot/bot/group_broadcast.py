@@ -29,21 +29,33 @@ async def post_new_vacancies_to_topics(bot: Bot) -> None:
         return
 
     for thread_id, language_keys in topics_by_thread.items():
-        async with async_session() as session:
-            vacancies = await get_vacancies_pending_group_post(session, thread_id, language_keys)
-            for vacancy in vacancies:
-                try:
-                    await bot.send_message(
-                        settings.group_chat_id,
-                        format_vacancy(vacancy),
-                        message_thread_id=thread_id,
-                        parse_mode="HTML",
-                        reply_markup=build_vacancy_keyboard(vacancy),
-                    )
-                except TelegramRetryAfter as exc:
-                    logger.warning("Rate limited posting to group topic %s, retry after %s", thread_id, exc.retry_after)
-                    break
-                except Exception:
-                    logger.exception("Failed to post vacancy %s to topic %s", vacancy.id, thread_id)
-                    continue
-                await record_group_topic_post(session, vacancy.id, thread_id)
+        try:
+            async with async_session() as session:
+                vacancies = await get_vacancies_pending_group_post(session, thread_id, language_keys)
+                for vacancy in vacancies:
+                    try:
+                        await bot.send_message(
+                            settings.group_chat_id,
+                            format_vacancy(vacancy),
+                            message_thread_id=thread_id,
+                            parse_mode="HTML",
+                            reply_markup=build_vacancy_keyboard(vacancy),
+                        )
+                        await record_group_topic_post(session, vacancy.id, thread_id)
+                    except TelegramRetryAfter as exc:
+                        logger.warning(
+                            "Rate limited posting to group topic %s, retry after %s", thread_id, exc.retry_after
+                        )
+                        break
+                    except Exception:
+                        # Covers both a failed send and a failed record (e.g. a
+                        # unique-constraint race from a concurrent run) — either
+                        # way, one bad vacancy must not abort every other topic.
+                        # Roll back so the session is still usable for the rest
+                        # of this thread's vacancies after a failed commit.
+                        await session.rollback()
+                        logger.exception("Failed to post vacancy %s to topic %s", vacancy.id, thread_id)
+                        continue
+        except Exception:
+            logger.exception("Failed to process group topic %s", thread_id)
+            continue
