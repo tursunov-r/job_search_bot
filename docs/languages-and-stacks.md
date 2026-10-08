@@ -36,27 +36,37 @@
 | FastAPI | `fastapi` | Python | `fastapi` |
 | Celery | `celery` | Python | `celery` |
 | Pandas/NumPy | `pandas` | Python | `pandas`, `numpy` |
+| SQLAlchemy | `sqlalchemy` | Python | `sqlalchemy` |
+| aiogram | `aiogram` | Python | `aiogram` |
 | React | `react` | JavaScript/TS | `react` |
 | Node.js | `nodejs` | JavaScript/TS | `node.js`, `nodejs`, `express`, `express.js` |
 | Vue | `vue` | JavaScript/TS | `vue`, `vue.js` |
 | Next.js | `nextjs` | JavaScript/TS | `next.js`, `nextjs` |
 | NestJS | `nestjs` | JavaScript/TS | `nest.js`, `nestjs` |
+| Prisma | `prisma` | JavaScript/TS | `prisma` |
+| TypeORM | `typeorm` | JavaScript/TS | `typeorm` |
+| Sequelize | `sequelize` | JavaScript/TS | `sequelize` |
 | Gin | `gin` | Go | `gin` |
 | Echo | `echo` | Go | `echo` |
 | Fiber | `fiber` | Go | `fiber` |
 | gRPC | `grpc` | Go | `grpc` |
+| GORM | `gorm` | Go | `gorm` |
 | Spring | `spring` | Java | `spring`, `spring boot` |
 | Hibernate | `hibernate` | Java | `hibernate` |
+| MyBatis | `mybatis` | Java | `mybatis` |
 | JUnit | `junit` | Java | `junit` |
 | Gradle | `gradle` | Java | `gradle` |
 | ASP.NET | `aspnet` | C#/.NET | `asp.net`, `aspnet` |
 | Entity Framework | `entityframework` | C#/.NET | `entity framework`, `ef core` |
+| Dapper | `dapper` | C#/.NET | `dapper` |
 | Blazor | `blazor` | C#/.NET | `blazor` |
 | Laravel | `laravel` | PHP | `laravel` |
 | Symfony | `symfony` | PHP | `symfony` |
+| Doctrine | `doctrine` | PHP | `doctrine` |
 | WordPress | `wordpress` | PHP | `wordpress` |
 | Rails | `rails` | Ruby | `rails`, `ruby on rails` |
 | Sinatra | `sinatra` | Ruby | `sinatra` |
+| Sequel | `sequel` | Ruby | `sequel` |
 
 ### Универсальные (видны всегда, при любом выбранном языке или без него)
 
