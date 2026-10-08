@@ -69,14 +69,25 @@ async def _delete_quietly(message: Message) -> None:
 def _build_language_keyboard(selected_languages: list[str]) -> InlineKeyboardMarkup:
     rows = []
     for lang in LANGUAGES.values():
-        checked = "✅ " if lang.key in selected_languages else ""
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text=f"{checked}{lang.label}", callback_data=f"{CALLBACK_PREFIX}:lang:{lang.key}"
-                )
-            ]
-        )
+        if lang.key in selected_languages:
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=f"✅ {lang.label}", callback_data=f"{CALLBACK_PREFIX}:lang:{lang.key}"
+                    ),
+                    InlineKeyboardButton(
+                        text="🗑", callback_data=f"{CALLBACK_PREFIX}:remove:{lang.key}"
+                    ),
+                ]
+            )
+        else:
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=lang.label, callback_data=f"{CALLBACK_PREFIX}:lang:{lang.key}"
+                    )
+                ]
+            )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -149,6 +160,37 @@ async def handle_pick_language(callback: CallbackQuery, state: FSMContext) -> No
         reply_markup=_build_tags_keyboard(chosen, tag_keys),
     )
     await callback.answer()
+
+
+@router.callback_query(F.data.startswith(f"{CALLBACK_PREFIX}:remove:"))
+async def handle_remove_language(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user is None or callback.data is None:
+        await callback.answer()
+        return
+
+    language_key = callback.data.split(":")[2]
+    await state.clear()
+
+    # Only this language's own tags — universal infra tags (Redis, Docker,
+    # etc.) stay, since they may still be relevant to other languages the
+    # subscriber kept.
+    language_tag_keys = {key for key, tag in STACK_TAGS.items() if tag.language == language_key}
+
+    async with async_session() as session:
+        subscriber = await get_or_create_subscriber(
+            session, telegram_user_id=callback.from_user.id, username=callback.from_user.username
+        )
+        new_languages = set(_json_list(subscriber.languages)) - {language_key}
+        new_skills = set(_json_list(subscriber.skills)) - language_tag_keys
+
+        await update_subscriber_languages(session, subscriber, list(new_languages))
+        await update_subscriber_skills(session, subscriber, list(new_skills))
+
+    lang_label = LANGUAGES[language_key].label
+    await callback.message.edit_text(
+        LANGUAGE_PICKER_TEXT, reply_markup=_build_language_keyboard(list(new_languages))
+    )
+    await callback.answer(f"{lang_label} удалён из профиля.")
 
 
 @router.callback_query(StackFSM.picking_tags, F.data.startswith(f"{CALLBACK_PREFIX}:tag:toggle:"))
