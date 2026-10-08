@@ -22,6 +22,9 @@
 | C#/.NET | `csharp` | `c#` | `c#`, `.net`, `dotnet`, `asp.net` |
 | PHP | `php` | `php` | `php` |
 | Ruby | `ruby` | `ruby` | `ruby`, `ruby on rails` |
+| Kotlin | `kotlin` | `kotlin` | `kotlin` |
+| Swift | `swift` | `swift` | `swift` *(слово "swift" изредка встречается в банковском контексте — SWIFT-платежи; поскольку это единственное ключевое слово, детект по описанию никогда не срабатывает — см. `_count_matches`, порог "≥2" недостижим с одним словом; риск ложного срабатывания остаётся только для заголовка)* |
+| Dart/Flutter | `dart` | `flutter` *(а не `dart` — по факту почти все вакансии ищут именно "Flutter")* | `flutter`, `dart` |
 
 **LinkedIn-источник — исключение**: там язык всегда жёстко `python`, независимо от реестра выше (см. `docs/sources.md`).
 
@@ -67,6 +70,20 @@
 | Rails | `rails` | Ruby | `rails`, `ruby on rails` |
 | Sinatra | `sinatra` | Ruby | `sinatra` |
 | Sequel | `sequel` | Ruby | `sequel` |
+| Jetpack Compose | `jetpackcompose` | Kotlin | `jetpack compose`, `jetpack` |
+| Room | `room` | Kotlin | `room` |
+| Retrofit | `retrofit` | Kotlin | `retrofit` |
+| Coroutines | `coroutines` | Kotlin | `coroutines` |
+| Ktor | `ktor` | Kotlin | `ktor` |
+| SwiftUI | `swiftui` | Swift | `swiftui` |
+| UIKit | `uikit` | Swift | `uikit` |
+| Combine | `combine` | Swift | `combine` |
+| Core Data | `coredata` | Swift | `core data`, `coredata` |
+| Alamofire | `alamofire` | Swift | `alamofire` |
+| GetX | `getx` | Dart/Flutter | `getx` |
+| BLoC | `bloc` | Dart/Flutter | `bloc` |
+| Provider | `provider` | Dart/Flutter | `provider` |
+| Dio | `dio` | Dart/Flutter | `dio` |
 
 ### Универсальные (видны всегда, при любом выбранном языке или без него)
 
@@ -82,4 +99,4 @@
 
 ## Чего пока нет (идеи на будущее, список для себя)
 
-Языки, которые НЕ покрыты ни HH-поллингом, ни детектом для Telegram-каналов: Kotlin, Swift, C/C++, Rust, Scala, Elixir, Dart/Flutter, 1C. Добавляются по тому же паттерну — см. любой из коммитов `feat: add <язык> language + stack tags` в истории git для образца (новая запись в `LANGUAGES`, несколько тегов в `STACK_TAGS` с `language=<ключ>`, тест на детект в `tests/test_languages.py`).
+Языки, которые НЕ покрыты ни HH-поллингом, ни детектом для Telegram-каналов: C/C++, Rust, Scala, Elixir, 1C. Добавляются по тому же паттерну — см. любой из коммитов `feat: add <язык> language + stack tags` в истории git для образца (новая запись в `LANGUAGES`, несколько тегов в `STACK_TAGS` с `language=<ключ>`, тест на детект в `tests/test_languages.py`).

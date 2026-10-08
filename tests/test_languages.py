@@ -41,3 +41,20 @@ def test_detects_php():
 
 def test_detects_ruby():
     assert detect_languages("Ruby on Rails Developer", "") == ["ruby"]
+
+
+def test_detects_kotlin():
+    assert detect_languages("Kotlin Developer", "") == ["kotlin"]
+
+
+def test_detects_swift_in_title_but_not_banking_swift_in_description():
+    assert detect_languages("Swift Developer", "") == ["swift"]
+    # A single keyword can never reach the description tier's >=2
+    # threshold, so a banking/fintech post mentioning SWIFT transfers
+    # only in the description (never in the title) won't false-positive.
+    assert detect_languages("Backend Developer", "Интеграция с SWIFT-платежами") == []
+
+
+def test_detects_dart_via_flutter_or_dart():
+    assert detect_languages("Flutter Developer", "") == ["dart"]
+    assert detect_languages("Dart Developer", "") == ["dart"]

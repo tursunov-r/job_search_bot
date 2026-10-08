@@ -31,6 +31,13 @@ LANGUAGES: dict[str, Language] = {
         Language("csharp", "C#/.NET", "c#", ("c#", ".net", "dotnet", "asp.net")),
         Language("php", "PHP", "php", ("php",)),
         Language("ruby", "Ruby", "ruby", ("ruby", "ruby on rails")),
+        Language("kotlin", "Kotlin", "kotlin", ("kotlin",)),
+        # "swift" the word also shows up in banking/fintech text (SWIFT
+        # payment transfers) — relying on the title-only match tier (a
+        # single keyword can never reach the description tier's >=2
+        # threshold, see _count_matches) keeps that mostly harmless.
+        Language("swift", "Swift", "swift", ("swift",)),
+        Language("dart", "Dart/Flutter", "flutter", ("flutter", "dart")),
     )
 }
 

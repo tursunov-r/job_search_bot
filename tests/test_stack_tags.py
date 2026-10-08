@@ -35,3 +35,13 @@ def test_visible_tags_includes_python_tags_when_python_selected():
     assert "fastapi" in tags
     for universal in UNIVERSAL_TAG_KEYS:
         assert universal in tags
+
+
+def test_visible_tags_includes_mobile_tags():
+    assert "jetpackcompose" in visible_tag_keys(["kotlin"])
+    assert "swiftui" in visible_tag_keys(["swift"])
+    assert "getx" in visible_tag_keys(["dart"])
+
+
+def test_matches_mobile_stack_tag_in_title():
+    assert matches_stack("Flutter Developer (BLoC)", None, ["bloc"])
