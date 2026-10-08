@@ -37,7 +37,7 @@ USER_AGENT = (
 
 BASE_URL = "https://career.habr.com"
 SEARCH_URL = f"{BASE_URL}/vacancies"
-MAX_PAGES = 2
+MAX_PAGES = 3
 PAGE_DELAY_SECONDS = 2.0
 DETAIL_FETCH_DELAY_SECONDS = 1.5
 
