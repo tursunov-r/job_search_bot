@@ -36,7 +36,6 @@ USER_AGENT = (
     "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
 )
 
-AREA_RUSSIA = "113"
 MAX_PAGES = 2
 PAGE_DELAY_SECONDS = 2.0
 DETAIL_FETCH_DELAY_SECONDS = 1.5
@@ -171,7 +170,9 @@ async def fetch_vacancies(search_term: str) -> list[RawVacancy]:
             try:
                 response = await client.get(
                     settings.hh_search_url,
-                    params={"text": search_term, "area": AREA_RUSSIA, "page": page},
+                    # No "area" param — without it HH searches all countries
+                    # (Russia, Kazakhstan, Belarus, etc.), not just Russia.
+                    params={"text": search_term, "page": page},
                 )
                 response.raise_for_status()
             except httpx.HTTPError as exc:
