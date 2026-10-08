@@ -14,32 +14,45 @@ class Language:
     label: str
     hh_search_term: str
     keywords: tuple[str, ...]
+    categories: tuple[str, ...] = ()  # keys into CATEGORIES — a language can be in more than one
 
+
+CATEGORIES: dict[str, str] = {
+    "backend": "🖥 Backend",
+    "frontend": "🎨 Frontend",
+    "mobile": "📱 Mobile",
+}
 
 LANGUAGES: dict[str, Language] = {
     lang.key: lang
     for lang in (
-        Language("python", "Python", "python", ("python", "питон", "пайтон")),
+        Language("python", "Python", "python", ("python", "питон", "пайтон"), categories=("backend",)),
+        # JS/TS covers both — React/Vue/Next.js tags are frontend, Node.js/NestJS are backend.
         Language(
             "javascript",
             "JavaScript/TS",
             "javascript",
             ("javascript", "typescript", "node.js", "nodejs"),
+            categories=("frontend", "backend"),
         ),
-        Language("go", "Go", "golang", ("golang", "go-разработчик", "go developer")),
-        Language("java", "Java", "java", ("java",)),
-        Language("csharp", "C#/.NET", "c#", ("c#", ".net", "dotnet", "asp.net")),
-        Language("php", "PHP", "php", ("php",)),
-        Language("ruby", "Ruby", "ruby", ("ruby", "ruby on rails")),
-        Language("kotlin", "Kotlin", "kotlin", ("kotlin",)),
+        Language("go", "Go", "golang", ("golang", "go-разработчик", "go developer"), categories=("backend",)),
+        Language("java", "Java", "java", ("java",), categories=("backend",)),
+        Language("csharp", "C#/.NET", "c#", ("c#", ".net", "dotnet", "asp.net"), categories=("backend",)),
+        Language("php", "PHP", "php", ("php",), categories=("backend",)),
+        Language("ruby", "Ruby", "ruby", ("ruby", "ruby on rails"), categories=("backend",)),
+        Language("kotlin", "Kotlin", "kotlin", ("kotlin",), categories=("mobile",)),
         # "swift" the word also shows up in banking/fintech text (SWIFT
         # payment transfers) — relying on the title-only match tier (a
         # single keyword can never reach the description tier's >=2
         # threshold, see _count_matches) keeps that mostly harmless.
-        Language("swift", "Swift", "swift", ("swift",)),
-        Language("dart", "Dart/Flutter", "flutter", ("flutter", "dart")),
+        Language("swift", "Swift", "swift", ("swift",), categories=("mobile",)),
+        Language("dart", "Dart/Flutter", "flutter", ("flutter", "dart"), categories=("mobile",)),
     )
 }
+
+
+def languages_in_category(category_key: str) -> list[Language]:
+    return [lang for lang in LANGUAGES.values() if category_key in lang.categories]
 
 _WORD_RE_CACHE: dict[str, re.Pattern] = {}
 

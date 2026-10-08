@@ -1,4 +1,4 @@
-from jobsbot.processing.languages import detect_languages
+from jobsbot.processing.languages import CATEGORIES, detect_languages, languages_in_category
 
 
 def test_detects_python_in_title():
@@ -58,3 +58,20 @@ def test_detects_swift_in_title_but_not_banking_swift_in_description():
 def test_detects_dart_via_flutter_or_dart():
     assert detect_languages("Flutter Developer", "") == ["dart"]
     assert detect_languages("Dart Developer", "") == ["dart"]
+
+
+def test_mobile_languages_are_in_mobile_category():
+    mobile_keys = {lang.key for lang in languages_in_category("mobile")}
+    assert mobile_keys == {"kotlin", "swift", "dart"}
+
+
+def test_javascript_is_in_both_frontend_and_backend():
+    assert "javascript" in {lang.key for lang in languages_in_category("frontend")}
+    assert "javascript" in {lang.key for lang in languages_in_category("backend")}
+
+
+def test_every_language_belongs_to_at_least_one_category():
+    from jobsbot.processing.languages import LANGUAGES
+
+    categorized = {lang.key for cat in CATEGORIES for lang in languages_in_category(cat)}
+    assert categorized == set(LANGUAGES.keys())

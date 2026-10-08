@@ -14,7 +14,7 @@ from aiogram.types import (
 )
 
 from jobsbot.bot.push import resend_matching_backlog
-from jobsbot.processing.languages import LANGUAGES
+from jobsbot.processing.languages import CATEGORIES, LANGUAGES, languages_in_category
 from jobsbot.processing.stack_tags import STACK_TAGS, visible_tag_keys
 from jobsbot.processing.work_formats import WORK_FORMATS
 from jobsbot.storage.db import async_session
@@ -86,17 +86,26 @@ async def _delete_quietly(message: Message) -> None:
         logger.debug("Could not delete message %s (probably harmless)", message.message_id)
 
 
-def _build_language_keyboard(selected_languages: list[str]) -> InlineKeyboardMarkup:
+def _build_category_keyboard() -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(text=label, callback_data=f"{CALLBACK_PREFIX}:cat:{key}")]
+        for key, label in CATEGORIES.items()
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _build_language_keyboard(selected_languages: list[str], category_key: str) -> InlineKeyboardMarkup:
     rows = []
-    for lang in LANGUAGES.values():
+    for lang in languages_in_category(category_key):
         if lang.key in selected_languages:
             rows.append(
                 [
                     InlineKeyboardButton(
-                        text=f"✅ {lang.label}", callback_data=f"{CALLBACK_PREFIX}:lang:{lang.key}"
+                        text=f"✅ {lang.label}",
+                        callback_data=f"{CALLBACK_PREFIX}:lang:{category_key}:{lang.key}",
                     ),
                     InlineKeyboardButton(
-                        text="🗑", callback_data=f"{CALLBACK_PREFIX}:remove:{lang.key}"
+                        text="🗑", callback_data=f"{CALLBACK_PREFIX}:remove:{category_key}:{lang.key}"
                     ),
                 ]
             )
@@ -104,10 +113,11 @@ def _build_language_keyboard(selected_languages: list[str]) -> InlineKeyboardMar
             rows.append(
                 [
                     InlineKeyboardButton(
-                        text=lang.label, callback_data=f"{CALLBACK_PREFIX}:lang:{lang.key}"
+                        text=lang.label, callback_data=f"{CALLBACK_PREFIX}:lang:{category_key}:{lang.key}"
                     )
                 ]
             )
+    rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data=f"{CALLBACK_PREFIX}:backcat")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -133,7 +143,11 @@ def _build_tags_keyboard(chosen: list[str], tag_keys: list[str]) -> InlineKeyboa
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-LANGUAGE_PICKER_TEXT = "Выбери язык — дальше покажу фреймворки/БД для него:"
+CATEGORY_PICKER_TEXT = "В какой сфере ищешь вакансии?"
+
+
+def _language_picker_text(category_key: str) -> str:
+    return f"{CATEGORIES[category_key]} — выбери язык, дальше покажу фреймворки/БД для него:"
 
 
 @router.message(F.text == BTN_ADD_STACK)
@@ -142,16 +156,34 @@ async def handle_add_stack_button(message: Message, state: FSMContext) -> None:
         return
     await _delete_quietly(message)
     await state.clear()
+    await message.answer(CATEGORY_PICKER_TEXT, reply_markup=_build_category_keyboard())
 
+
+@router.callback_query(F.data.startswith(f"{CALLBACK_PREFIX}:cat:"))
+async def handle_pick_category(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user is None or callback.data is None:
+        await callback.answer()
+        return
+
+    category_key = callback.data.split(":")[2]
     async with async_session() as session:
         subscriber = await get_or_create_subscriber(
-            session, telegram_user_id=message.from_user.id, username=message.from_user.username
+            session, telegram_user_id=callback.from_user.id, username=callback.from_user.username
         )
         selected_languages = _json_list(subscriber.languages)
 
-    await message.answer(
-        LANGUAGE_PICKER_TEXT, reply_markup=_build_language_keyboard(selected_languages)
+    await callback.message.edit_text(
+        _language_picker_text(category_key),
+        reply_markup=_build_language_keyboard(selected_languages, category_key),
     )
+    await callback.answer()
+
+
+@router.callback_query(F.data == f"{CALLBACK_PREFIX}:backcat")
+async def handle_back_to_categories(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await callback.message.edit_text(CATEGORY_PICKER_TEXT, reply_markup=_build_category_keyboard())
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith(f"{CALLBACK_PREFIX}:lang:"))
@@ -160,7 +192,7 @@ async def handle_pick_language(callback: CallbackQuery, state: FSMContext) -> No
         await callback.answer()
         return
 
-    language_key = callback.data.split(":")[2]
+    _, _, category_key, language_key = callback.data.split(":")
     tag_keys = visible_tag_keys([language_key])
 
     async with async_session() as session:
@@ -172,7 +204,7 @@ async def handle_pick_language(callback: CallbackQuery, state: FSMContext) -> No
     chosen = [key for key in tag_keys if key in current_skills]
 
     await state.set_state(StackFSM.picking_tags)
-    await state.update_data(language=language_key, chosen=chosen)
+    await state.update_data(language=language_key, category=category_key, chosen=chosen)
 
     lang_label = LANGUAGES[language_key].label
     await callback.message.edit_text(
@@ -188,7 +220,7 @@ async def handle_remove_language(callback: CallbackQuery, state: FSMContext) -> 
         await callback.answer()
         return
 
-    language_key = callback.data.split(":")[2]
+    _, _, category_key, language_key = callback.data.split(":")
     await state.clear()
 
     # Only this language's own tags — universal infra tags (Redis, Docker,
@@ -208,7 +240,8 @@ async def handle_remove_language(callback: CallbackQuery, state: FSMContext) -> 
 
     lang_label = LANGUAGES[language_key].label
     await callback.message.edit_text(
-        LANGUAGE_PICKER_TEXT, reply_markup=_build_language_keyboard(list(new_languages))
+        _language_picker_text(category_key),
+        reply_markup=_build_language_keyboard(list(new_languages), category_key),
     )
     await callback.answer(f"{lang_label} удалён из профиля.")
 
@@ -240,6 +273,8 @@ async def handle_back_to_languages(callback: CallbackQuery, state: FSMContext) -
     if callback.from_user is None:
         await callback.answer()
         return
+    data = await state.get_data()
+    category_key = data.get("category")
     await state.clear()
 
     async with async_session() as session:
@@ -249,7 +284,8 @@ async def handle_back_to_languages(callback: CallbackQuery, state: FSMContext) -
         selected_languages = _json_list(subscriber.languages)
 
     await callback.message.edit_text(
-        LANGUAGE_PICKER_TEXT, reply_markup=_build_language_keyboard(selected_languages)
+        _language_picker_text(category_key),
+        reply_markup=_build_language_keyboard(selected_languages, category_key),
     )
     await callback.answer()
 
