@@ -12,5 +12,6 @@ COPY alembic.ini .
 COPY alembic/ alembic/
 COPY reset_vacancies.py .
 COPY seed_group_topics.py .
+COPY backfill_group_topic_baseline.py .
 
 CMD ["python", "-m", "jobsbot.main"]
