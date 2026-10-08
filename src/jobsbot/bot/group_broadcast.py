@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from aiogram import Bot
@@ -13,6 +14,13 @@ from jobsbot.storage.repo import (
 )
 
 logger = logging.getLogger(__name__)
+
+# All topics post into the same group chat_id, so Telegram's per-chat rate
+# limit (roughly 20 msg/min) applies across every topic combined, not per
+# topic — without pacing, one topic's backlog burns through the whole
+# budget and every other topic's very first send instantly hits
+# TelegramRetryAfter, every single cycle.
+POST_DELAY_SECONDS = 2.0
 
 
 async def post_new_vacancies_to_topics(bot: Bot) -> None:
@@ -43,19 +51,28 @@ async def post_new_vacancies_to_topics(bot: Bot) -> None:
                         )
                         await record_group_topic_post(session, vacancy.id, thread_id)
                     except TelegramRetryAfter as exc:
+                        # The limit is per-chat, shared by every topic — moving
+                        # on to the next topic would just hit the same wall
+                        # immediately, so stop the whole cycle here instead of
+                        # burning through every remaining topic for nothing.
+                        # The next scheduled run picks up right where this
+                        # left off (get_vacancies_pending_group_post skips
+                        # whatever already got recorded).
                         logger.warning(
-                            "Rate limited posting to group topic %s, retry after %s", thread_id, exc.retry_after
+                            "Rate limited posting to group topic %s, retry after %s — stopping this cycle",
+                            thread_id,
+                            exc.retry_after,
                         )
-                        break
+                        return
                     except Exception:
-                        # Covers both a failed send and a failed record (e.g. a
-                        # unique-constraint race from a concurrent run) — either
-                        # way, one bad vacancy must not abort every other topic.
-                        # Roll back so the session is still usable for the rest
-                        # of this thread's vacancies after a failed commit.
+                        # Covers a failed record (e.g. a unique-constraint race
+                        # from a concurrent run) — one bad vacancy must not
+                        # abort every other topic. Roll back so the session is
+                        # still usable for the rest of this topic's vacancies.
                         await session.rollback()
                         logger.exception("Failed to post vacancy %s to topic %s", vacancy.id, thread_id)
                         continue
+                    await asyncio.sleep(POST_DELAY_SECONDS)
         except Exception:
             logger.exception("Failed to process group topic %s", thread_id)
             continue
