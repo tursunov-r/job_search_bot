@@ -1,4 +1,4 @@
-from jobsbot.processing.languages import CATEGORIES, detect_languages, languages_in_category
+from jobsbot.processing.languages import CATEGORIES, detect_languages, language_matches, languages_in_category
 
 
 def test_detects_python_in_title():
@@ -95,3 +95,17 @@ def test_every_language_belongs_to_at_least_one_category():
 
     categorized = {lang.key for cat in CATEGORIES for lang in languages_in_category(cat)}
     assert categorized == set(LANGUAGES.keys())
+
+
+def test_language_matches_genuine_posting():
+    assert language_matches("dart", "Senior Flutter Developer", None) is True
+
+
+def test_language_matches_rejects_unrelated_posting():
+    # Confirmed live: HH pads a sparse search term ("flutter") with
+    # unrelated postings once genuine matches run out past page 1.
+    assert language_matches("dart", "Менеджер по продажам", None) is False
+
+
+def test_language_matches_unknown_key_is_false():
+    assert language_matches("not_a_real_language", "Anything", None) is False

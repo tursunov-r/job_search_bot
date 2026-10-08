@@ -93,6 +93,19 @@ def _count_matches(text: str, keywords: tuple[str, ...]) -> int:
     return sum(1 for kw in keywords if _keyword_pattern(kw).search(text))
 
 
+def language_matches(language_key: str, title: str, description: str | None) -> bool:
+    """Does this vacancy's own text actually mention the language — used to
+    sanity-check a search-term-based language_hint from HH/Habr (trusted
+    blindly otherwise). Confirmed live: HH pads sparse search terms (e.g.
+    "flutter") with unrelated postings past page 1 once genuine matches run
+    out, so the hint alone isn't reliable for low-volume terms."""
+    lang = LANGUAGES.get(language_key)
+    if lang is None:
+        return False
+    text = f"{title or ''} {description or ''}"
+    return _count_matches(text, lang.keywords) >= 1
+
+
 def detect_languages(title: str, description: str | None) -> list[str]:
     """Which supported languages are mentioned in this text.
 

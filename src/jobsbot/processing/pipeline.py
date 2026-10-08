@@ -6,7 +6,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from jobsbot.ingestion.base import RawVacancy
 from jobsbot.ingestion.normalize import clean_raw_vacancy
 from jobsbot.processing.dedup import fingerprint
-from jobsbot.processing.languages import detect_languages
+from jobsbot.processing.languages import detect_languages, language_matches
 from jobsbot.storage.models import Vacancy
 from jobsbot.storage.repo import get_vacancy_by_fingerprint, insert_vacancy
 
@@ -36,7 +36,19 @@ async def ingest(
         return None
 
     if language_hint:
-        languages_found = [language_hint]
+        if language_matches(language_hint, clean.title, clean.description):
+            languages_found = [language_hint]
+        else:
+            # HH/Habr sometimes pad a sparse search term with unrelated
+            # postings past the first page once genuine matches run out —
+            # don't blindly trust the hint if the vacancy's own text never
+            # actually mentions it; fall back to general detection instead.
+            languages_found = detect_languages(clean.title, clean.description or "")
+            if not languages_found:
+                logger.debug(
+                    "Dropping vacancy — search hint %r not actually mentioned: %s", language_hint, clean.title
+                )
+                return None
     else:
         languages_found = detect_languages(clean.title, clean.description or "")
         if not languages_found:
