@@ -113,6 +113,7 @@ class VacancyDetails:
     employment_type: str | None = None
     schedule: str | None = None
     work_format: str | None = None
+    salary_text: str | None = None
 
 
 def _text_or_none(tree: LexborHTMLParser, selector: str) -> str | None:
@@ -145,6 +146,9 @@ def _parse_vacancy_details(html: str) -> VacancyDetails:
         employment_type=_text_or_none(tree, '[data-qa="common-employment-text"]'),
         schedule=schedule_text,
         work_format=work_format,
+        # Fallback for listing cards without a salary — the detail page has
+        # its own stable selector, unlike the listing's data-tag walk-up.
+        salary_text=_text_or_none(tree, '[data-qa="vacancy-salary"]'),
     )
 
 

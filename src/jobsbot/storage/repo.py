@@ -144,13 +144,26 @@ async def get_active_subscribers(session: AsyncSession) -> list[Subscriber]:
     return list(result.all())
 
 
+def _details_ready_clause():
+    """A vacancy is safe to push once its detail-enrichment pass finished
+    (details_checked), or — as a safety net in case that pass crashed
+    without ever marking it — once it's old enough that the pass must have
+    already had its chance to run."""
+    stale_cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
+    return (Vacancy.details_checked == True) | (Vacancy.first_seen_at < stale_cutoff)  # noqa: E712
+
+
 async def get_pending_vacancies_for_subscriber(
     session: AsyncSession, subscriber: Subscriber, limit: int = 20
 ) -> list[Vacancy]:
     cursor_id = subscriber.last_vacancy_sent_id or 0
     result = await session.exec(
         select(Vacancy)
-        .where(Vacancy.id > cursor_id, Vacancy.is_python_relevant == True)  # noqa: E712
+        .where(
+            Vacancy.id > cursor_id,
+            Vacancy.is_python_relevant == True,  # noqa: E712
+            _details_ready_clause(),
+        )
         .order_by(Vacancy.id)
         .limit(limit)
     )
@@ -195,7 +208,11 @@ async def get_undelivered_recent_vacancies(
     )
     result = await session.exec(
         select(Vacancy)
-        .where(Vacancy.first_seen_at >= cutoff, Vacancy.id.not_in(delivered_subquery))
+        .where(
+            Vacancy.first_seen_at >= cutoff,
+            Vacancy.id.not_in(delivered_subquery),
+            _details_ready_clause(),
+        )
         .order_by(Vacancy.id)
         .limit(limit)
     )
@@ -229,7 +246,12 @@ async def update_vacancy_details(
     employment_type: str | None = None,
     schedule: str | None = None,
     work_format: str | None = None,
+    salary_text: str | None = None,
 ) -> None:
+    """Always marks the vacancy's detail-enrichment pass as done (even if
+    every field here is None, e.g. the detail-page fetch failed) — otherwise
+    push_new_vacancies would hold it back forever waiting for a pass that
+    already ran and isn't coming again. See Vacancy.details_checked."""
     result = await session.exec(select(Vacancy).where(Vacancy.id == vacancy_id))
     vacancy = result.first()
     if vacancy is None:
@@ -244,6 +266,9 @@ async def update_vacancy_details(
         vacancy.schedule = schedule
     if work_format:
         vacancy.work_format = work_format
+    if salary_text:
+        vacancy.salary_text = salary_text
+    vacancy.details_checked = True
     session.add(vacancy)
     await session.commit()
 

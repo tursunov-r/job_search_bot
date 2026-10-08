@@ -33,7 +33,7 @@ async def poll_hh_language(language_key: str) -> list:
             session, "hh", f"hh_search_{language_key}", f"hh.ru search ({lang.label})"
         )
         for raw in raw_vacancies:
-            vacancy = await ingest(session, raw, source.id, language_hint=language_key)
+            vacancy = await ingest(session, raw, source.id, language_hint=language_key, needs_details=True)
             if vacancy:
                 new_vacancies.append(vacancy)
     logger.info(
@@ -60,17 +60,20 @@ async def poll_hh() -> None:
             if not vacancy.url:
                 continue
             details = await hh_adapter.fetch_vacancy_details(client, vacancy.url)
-            if details is not None:
-                async with async_session() as session:
-                    await update_vacancy_details(
-                        session,
-                        vacancy.id,
-                        description=details.description,
-                        experience=details.experience,
-                        employment_type=details.employment_type,
-                        schedule=details.schedule,
-                        work_format=details.work_format,
-                    )
+            async with async_session() as session:
+                # Always update — even when details is None (fetch failed),
+                # update_vacancy_details still marks details_checked=True so
+                # push_new_vacancies doesn't hold this vacancy back forever.
+                await update_vacancy_details(
+                    session,
+                    vacancy.id,
+                    description=details.description if details else None,
+                    experience=details.experience if details else None,
+                    employment_type=details.employment_type if details else None,
+                    schedule=details.schedule if details else None,
+                    work_format=details.work_format if details else None,
+                    salary_text=details.salary_text if details else None,
+                )
             if i < len(all_new_vacancies) - 1:
                 await asyncio.sleep(hh_adapter.DETAIL_FETCH_DELAY_SECONDS)
 
@@ -89,7 +92,7 @@ async def poll_habr_language(language_key: str) -> list:
             session, "habr", f"habr_search_{language_key}", f"Habr Career search ({lang.label})"
         )
         for raw in raw_vacancies:
-            vacancy = await ingest(session, raw, source.id, language_hint=language_key)
+            vacancy = await ingest(session, raw, source.id, language_hint=language_key, needs_details=True)
             if vacancy:
                 new_vacancies.append(vacancy)
     logger.info(
@@ -116,9 +119,12 @@ async def poll_habr() -> None:
             if not vacancy.url:
                 continue
             details = await habr_adapter.fetch_vacancy_details(client, vacancy.url)
-            if details is not None and details.description:
-                async with async_session() as session:
-                    await update_vacancy_details(session, vacancy.id, description=details.description)
+            async with async_session() as session:
+                await update_vacancy_details(
+                    session,
+                    vacancy.id,
+                    description=details.description if details else None,
+                )
             if i < len(all_new_vacancies) - 1:
                 await asyncio.sleep(habr_adapter.DETAIL_FETCH_DELAY_SECONDS)
 

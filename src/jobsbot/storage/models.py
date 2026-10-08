@@ -43,6 +43,12 @@ class Vacancy(SQLModel, table=True):
     source_chat_id: int | None = None  # Telegram chat id, for forwarding the original message
     source_message_id: int | None = None  # Telegram message id, for forwarding the original message
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    # False only while a later detail-page enrichment pass (HH/Habr) is
+    # still pending — push_new_vacancies skips a vacancy until this is True
+    # (or it's old enough that the enrichment pass must have already run
+    # and failed), so subscribers never get a message missing fields that
+    # simply hadn't been fetched yet.
+    details_checked: bool = True
 
 
 class Subscriber(SQLModel, table=True):

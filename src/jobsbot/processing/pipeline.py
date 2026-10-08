@@ -14,13 +14,21 @@ logger = logging.getLogger(__name__)
 
 
 async def ingest(
-    session: AsyncSession, raw: RawVacancy, source_id: int, language_hint: str | None = None
+    session: AsyncSession,
+    raw: RawVacancy,
+    source_id: int,
+    language_hint: str | None = None,
+    needs_details: bool = False,
 ) -> Vacancy | None:
     """Normalize -> filter -> dedup -> store. Returns the new Vacancy if inserted, else None.
 
     language_hint: pass the language a source was queried for (HH/LinkedIn —
     trusted, no re-detection needed). Leave None for mixed-topic sources
     (Telegram channels), where relevance is decided by detect_languages.
+
+    needs_details: True for sources that enrich the vacancy with a later,
+    separate detail-page fetch (HH, Habr) — keeps it out of push_new_vacancies
+    until that pass completes (see Vacancy.details_checked).
     """
     clean = clean_raw_vacancy(raw)
 
@@ -65,5 +73,6 @@ async def ingest(
         languages=json.dumps(languages_found),
         source_chat_id=clean.source_chat_id,
         source_message_id=clean.source_message_id,
+        details_checked=not needs_details,
     )
     return await insert_vacancy(session, vacancy)
