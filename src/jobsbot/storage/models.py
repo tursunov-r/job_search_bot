@@ -1,6 +1,7 @@
 import uuid as uuid_lib
 from datetime import datetime, timezone
 
+from sqlalchemy import BigInteger
 from sqlmodel import SQLModel, Field, UniqueConstraint
 
 
@@ -40,7 +41,9 @@ class Vacancy(SQLModel, table=True):
     first_seen_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     is_python_relevant: bool = True
     languages: str = Field(default="[]")  # JSON array of languages.py keys detected/assigned
-    source_chat_id: int | None = None  # Telegram chat id, for forwarding the original message
+    # Telegram chat ids (esp. channels/supergroups) routinely exceed int32 —
+    # plain int here maps to a Postgres INTEGER and would silently reject them.
+    source_chat_id: int | None = Field(default=None, sa_type=BigInteger)  # for forwarding the original message
     source_message_id: int | None = None  # Telegram message id, for forwarding the original message
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     # False only while a later detail-page enrichment pass (HH/Habr) is
@@ -55,7 +58,10 @@ class Subscriber(SQLModel, table=True):
     __tablename__ = "subscribers"
 
     id: int | None = Field(default=None, primary_key=True)
-    telegram_user_id: int = Field(index=True, unique=True)
+    # Modern Telegram user ids routinely exceed int32 (e.g. 8419696219) —
+    # plain int here maps to a Postgres INTEGER and silently rejects them,
+    # so most real users could never even get a Subscriber row created.
+    telegram_user_id: int = Field(index=True, unique=True, sa_type=BigInteger)
     username: str | None = None
     status: str = "active"  # 'active', 'paused', 'blocked'
     subscribed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -88,10 +94,10 @@ class StaffMember(SQLModel, table=True):
     __tablename__ = "staff_members"
 
     id: int | None = Field(default=None, primary_key=True)
-    telegram_user_id: int = Field(index=True, unique=True)
+    telegram_user_id: int = Field(index=True, unique=True, sa_type=BigInteger)
     username: str | None = None
     permissions: str = Field(default="[]")  # JSON array of bot/permissions.py keys
-    added_by_telegram_user_id: int
+    added_by_telegram_user_id: int = Field(sa_type=BigInteger)
     added_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     status: str = "active"  # 'active', 'removed'
 
