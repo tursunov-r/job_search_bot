@@ -21,6 +21,7 @@ from jobsbot.storage.repo import (
     add_telegram_channel,
     block_subscriber_by_telegram_id,
     get_source_by_id,
+    get_subscriber_counts_by_status,
     list_staff_members,
     list_telegram_channels,
     remove_staff_member,
@@ -34,7 +35,8 @@ BTN_CHANNELS = "📡 Каналы"
 BTN_USERS = "🚫 Пользователи"
 BTN_ADS = "📢 Реклама"
 BTN_STAFF = "👥 Сотрудники"
-MENU_BUTTON_TEXTS = {BTN_CHANNELS, BTN_USERS, BTN_ADS, BTN_STAFF}
+BTN_STATS = "📊 Статистика"
+MENU_BUTTON_TEXTS = {BTN_CHANNELS, BTN_USERS, BTN_ADS, BTN_STAFF, BTN_STATS}
 
 
 class AdminFSM(StatesGroup):
@@ -54,7 +56,7 @@ async def get_admin_menu_rows(user_id: int) -> list[list[KeyboardButton]]:
     if "manage_ads" in perms:
         rows.append([KeyboardButton(text=BTN_ADS)])
     if is_super_admin(user_id):
-        rows.append([KeyboardButton(text=BTN_STAFF)])
+        rows.append([KeyboardButton(text=BTN_STAFF), KeyboardButton(text=BTN_STATS)])
     return rows
 
 
@@ -355,3 +357,23 @@ async def handle_remove_staff(callback: CallbackQuery) -> None:
         await remove_staff_member(session, staff_id)
     await callback.answer("Удалён")
     await _show_staff(callback.message)
+
+
+# ---- Stats (super admin only) ----
+
+_STATUS_LABELS = {"active": "активных", "paused": "на паузе", "blocked": "заблокированных"}
+
+
+@router.message(F.text == BTN_STATS)
+async def handle_stats_button(message: Message) -> None:
+    if message.from_user is None or not is_super_admin(message.from_user.id):
+        return
+
+    async with async_session() as session:
+        counts = await get_subscriber_counts_by_status(session)
+
+    total = sum(counts.values())
+    lines = [f"👤 Всего зарегистрировано: {total}"]
+    for status, label in _STATUS_LABELS.items():
+        lines.append(f"— {label}: {counts.get(status, 0)}")
+    await message.answer("\n".join(lines))

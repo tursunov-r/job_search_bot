@@ -1,7 +1,7 @@
 import json
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlmodel import delete, select, update
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -156,6 +156,14 @@ async def get_or_create_subscriber(
 async def get_active_subscribers(session: AsyncSession) -> list[Subscriber]:
     result = await session.exec(select(Subscriber).where(Subscriber.status == "active"))
     return list(result.all())
+
+
+async def get_subscriber_counts_by_status(session: AsyncSession) -> dict[str, int]:
+    """Counts by Subscriber.status ('active', 'paused', 'blocked') — used by
+    the super admin's "📊 Статистика" button. Doesn't include a 'total' key;
+    callers sum the values themselves."""
+    result = await session.exec(select(Subscriber.status, func.count()).group_by(Subscriber.status))
+    return dict(result.all())
 
 
 def _details_ready_clause():
