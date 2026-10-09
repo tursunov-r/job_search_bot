@@ -93,6 +93,11 @@ async def get_vacancy_by_fingerprint(session: AsyncSession, fingerprint: str) ->
     return result.first()
 
 
+async def get_vacancy_by_url(session: AsyncSession, url: str) -> Vacancy | None:
+    result = await session.exec(select(Vacancy).where(Vacancy.url == url))
+    return result.first()
+
+
 async def get_vacancy_by_id(session: AsyncSession, vacancy_id: int) -> Vacancy | None:
     result = await session.exec(select(Vacancy).where(Vacancy.id == vacancy_id))
     return result.first()

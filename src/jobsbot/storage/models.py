@@ -28,7 +28,7 @@ class Vacancy(SQLModel, table=True):
     title: str
     company: str | None = None
     description: str | None = None
-    url: str | None = None
+    url: str | None = Field(default=None, index=True)
     source_id: int = Field(foreign_key="sources.id")
     raw_source_ids: str = Field(default="[]")  # JSON array of source_ids (cross-post tracking)
     salary_text: str | None = None

@@ -8,7 +8,7 @@ from jobsbot.ingestion.normalize import clean_raw_vacancy
 from jobsbot.processing.dedup import fingerprint
 from jobsbot.processing.languages import detect_languages, language_matches
 from jobsbot.storage.models import Vacancy
-from jobsbot.storage.repo import get_vacancy_by_fingerprint, insert_vacancy
+from jobsbot.storage.repo import get_vacancy_by_fingerprint, get_vacancy_by_url, insert_vacancy
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +57,15 @@ async def ingest(
 
     fp = fingerprint(clean.title, clean.company, clean.description)
     existing = await get_vacancy_by_fingerprint(session, fp)
+    if existing is None and clean.url:
+        # The fingerprint hashes title+company+description together, but a
+        # source can re-render the exact same posting (same URL) with the
+        # employer's display name/brand changed between scrapes — confirmed
+        # live on HH (e.g. "ИнфоТех / ЗАО ЦТО ККМ СПб..." vs "Кассир.Ру (ООО
+        # ИнфоТех)" for the same vacancy a few hours apart), which shifts the
+        # fingerprint enough to slip past that check alone and get resent to
+        # subscribers who already got the original. The URL doesn't drift.
+        existing = await get_vacancy_by_url(session, clean.url)
     if existing:
         source_ids = set(json.loads(existing.raw_source_ids))
         if source_id not in source_ids:
