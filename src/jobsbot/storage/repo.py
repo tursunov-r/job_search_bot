@@ -10,6 +10,7 @@ from jobsbot.storage.models import (
     AdImpression,
     GroupTopic,
     GroupTopicPost,
+    RequiredChannel,
     Source,
     StaffMember,
     Subscriber,
@@ -165,6 +166,35 @@ async def get_broadcastable_subscribers(session: AsyncSession) -> list[Subscribe
     a real, reachable user."""
     result = await session.exec(select(Subscriber).where(Subscriber.status != "blocked"))
     return list(result.all())
+
+
+async def add_required_channel(session: AsyncSession, username: str, title: str | None = None) -> RequiredChannel:
+    channel = RequiredChannel(username=username, title=title)
+    session.add(channel)
+    await session.commit()
+    await session.refresh(channel)
+    return channel
+
+
+async def remove_required_channel(session: AsyncSession, channel_id: int) -> bool:
+    result = await session.exec(select(RequiredChannel).where(RequiredChannel.id == channel_id))
+    channel = result.first()
+    if channel is None:
+        return False
+    await session.delete(channel)
+    await session.commit()
+    return True
+
+
+async def list_required_channels(session: AsyncSession) -> list[RequiredChannel]:
+    result = await session.exec(select(RequiredChannel).order_by(RequiredChannel.id))
+    return list(result.all())
+
+
+async def mark_subscription_gate_passed(session: AsyncSession, subscriber: Subscriber) -> None:
+    subscriber.subscription_gate_passed = True
+    session.add(subscriber)
+    await session.commit()
 
 
 async def get_subscriber_counts_by_status(session: AsyncSession) -> dict[str, int]:

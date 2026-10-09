@@ -81,6 +81,12 @@ class Subscriber(SQLModel, table=True):
     # vacancy pushes or generated documents (resume/interview files) —
     # those are real content the subscriber wants to keep.
     last_bot_message_id: int | None = None
+    # True once this subscriber has either passed the required-channels
+    # subscription gate (see RequiredChannel) or pre-dates the feature
+    # entirely (backfilled to True by the migration that added this column
+    # — the gate is for *new* users, not a retroactive lockout). False
+    # means /start should check membership before showing the menu.
+    subscription_gate_passed: bool = Field(default=False)
 
 
 class VacancyDelivery(SQLModel, table=True):
@@ -153,6 +159,20 @@ class AdImpression(SQLModel, table=True):
     subscriber_id: int = Field(foreign_key="subscribers.id")
     sent_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     delivery_status: str = "sent"  # 'sent','failed','blocked'
+
+
+class RequiredChannel(SQLModel, table=True):
+    """A channel/group a new subscriber must join before they can use the
+    bot — the super admin adds these by @username. The bot must itself be a
+    member (ideally admin) of each one, or getChatMember calls against it
+    will fail."""
+
+    __tablename__ = "required_channels"
+
+    id: int | None = Field(default=None, primary_key=True)
+    username: str = Field(unique=True)  # without the leading @
+    title: str | None = None  # best-effort display name, fetched via get_chat when added
+    added_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class GroupTopic(SQLModel, table=True):

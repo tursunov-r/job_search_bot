@@ -18,13 +18,16 @@ from jobsbot.bot.permissions import PERMISSIONS, get_permissions, has_permission
 from jobsbot.config import settings
 from jobsbot.storage.db import async_session
 from jobsbot.storage.repo import (
+    add_required_channel,
     add_staff_member,
     add_telegram_channel,
     block_subscriber_by_telegram_id,
     get_source_by_id,
     get_subscriber_counts_by_status,
+    list_required_channels,
     list_staff_members,
     list_telegram_channels,
+    remove_required_channel,
     remove_staff_member,
     remove_telegram_channel,
     unblock_subscriber_by_telegram_id,
@@ -37,7 +40,8 @@ BTN_USERS = "🚫 Пользователи"
 BTN_ADS = "📢 Реклама"
 BTN_STAFF = "👥 Сотрудники"
 BTN_STATS = "📊 Статистика"
-MENU_BUTTON_TEXTS = {BTN_CHANNELS, BTN_USERS, BTN_ADS, BTN_STAFF, BTN_STATS}
+BTN_GATE_CHANNELS = "🔐 Обязательные каналы"
+MENU_BUTTON_TEXTS = {BTN_CHANNELS, BTN_USERS, BTN_ADS, BTN_STAFF, BTN_STATS, BTN_GATE_CHANNELS}
 
 
 class AdminFSM(StatesGroup):
@@ -47,6 +51,7 @@ class AdminFSM(StatesGroup):
     add_staff_permissions = State()
     broadcast_text = State()
     broadcast_confirm = State()
+    add_gate_channel = State()
 
 
 async def get_admin_menu_rows(user_id: int) -> list[list[KeyboardButton]]:
@@ -60,6 +65,7 @@ async def get_admin_menu_rows(user_id: int) -> list[list[KeyboardButton]]:
         rows.append([KeyboardButton(text=BTN_ADS)])
     if is_super_admin(user_id):
         rows.append([KeyboardButton(text=BTN_STAFF), KeyboardButton(text=BTN_STATS)])
+        rows.append([KeyboardButton(text=BTN_GATE_CHANNELS)])
     return rows
 
 
@@ -317,6 +323,88 @@ async def handle_broadcast_confirm(callback: CallbackQuery, state: FSMContext) -
 
     campaign, sent, total = await send_broadcast_now(callback.bot, text)
     await callback.message.edit_text(f"Готово — отправлено {sent} из {total} пользователей (кампания #{campaign.id}).")
+
+
+# ---- Required channels / subscription gate (super admin only) ----
+
+
+async def _show_gate_channels(message: Message) -> None:
+    async with async_session() as session:
+        channels = await list_required_channels(session)
+
+    lines = [f"🔒 {c.title or c.username} (@{c.username})" for c in channels] or [
+        "Пока нет обязательных каналов — новые пользователи проходят без проверки."
+    ]
+    rows = [[InlineKeyboardButton(text="➕ Добавить", callback_data="gatechan:add")]]
+    for c in channels:
+        rows.append([InlineKeyboardButton(text=f"🗑 {c.username}", callback_data=f"gatechan:rm:{c.id}")])
+    await message.answer("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+@router.message(F.text == BTN_GATE_CHANNELS)
+async def handle_gate_channels_button(message: Message) -> None:
+    if message.from_user is None or not is_super_admin(message.from_user.id):
+        return
+    await _show_gate_channels(message)
+
+
+@router.callback_query(F.data == "gatechan:add")
+async def handle_add_gate_channel_start(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user is None or not is_super_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    await state.set_state(AdminFSM.add_gate_channel)
+    await callback.message.answer(
+        "Пришли @username публичного канала или группы (бот должен быть туда добавлен, "
+        "желательно админом, иначе проверка подписки не сработает)."
+    )
+    await callback.answer()
+
+
+@router.message(AdminFSM.add_gate_channel)
+async def handle_gate_channel_input(message: Message, state: FSMContext) -> None:
+    if message.from_user is None or not is_super_admin(message.from_user.id):
+        await state.clear()
+        return
+    if message.text in MENU_BUTTON_TEXTS:
+        await state.clear()
+        await message.answer("Отменено. Нажми кнопку меню ещё раз.")
+        return
+
+    username = _extract_channel_username(message.text or "")
+    if not username:
+        await message.answer("Не понял. Пришли юзернейм канала или ссылку t.me/...")
+        return
+
+    title = None
+    try:
+        chat = await message.bot.get_chat(f"@{username}")
+        title = chat.title
+    except Exception:
+        pass
+
+    async with async_session() as session:
+        try:
+            await add_required_channel(session, username, title)
+        except Exception:
+            await state.clear()
+            await message.answer(f"@{username} уже в списке или произошла ошибка.")
+            return
+
+    await state.clear()
+    await message.answer(f"Готово — @{username} добавлен в обязательные каналы.")
+
+
+@router.callback_query(F.data.startswith("gatechan:rm:"))
+async def handle_remove_gate_channel(callback: CallbackQuery) -> None:
+    if callback.from_user is None or not is_super_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    channel_id = int(callback.data.split(":")[2])
+    async with async_session() as session:
+        await remove_required_channel(session, channel_id)
+    await callback.answer("Удалено")
+    await _show_gate_channels(callback.message)
 
 
 # ---- Staff (super admin only) ----
