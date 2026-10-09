@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir -e .
 
 COPY alembic.ini .
 COPY alembic/ alembic/
+COPY docs/ docs/
 COPY reset_vacancies.py .
 COPY seed_group_topics.py .
 COPY backfill_group_topic_baseline.py .

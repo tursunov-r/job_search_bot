@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     group_chat_id: int | None = None
     group_broadcast_interval_seconds: int = 180
 
+    # Optional — the "🎯 Подготовка к интервью" button is hidden entirely
+    # until this is set (no Gemini account needed to run the bot otherwise).
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-2.0-flash"
+
     db_host: str = "postgres"
     db_port: int = 5432
     db_name: str = "jobsbot"
@@ -50,6 +55,10 @@ class Settings(BaseSettings):
     @property
     def telegram_enabled(self) -> bool:
         return self.telegram_api_id is not None and bool(self.telegram_api_hash)
+
+    @property
+    def gemini_enabled(self) -> bool:
+        return bool(self.gemini_api_key)
 
     @property
     def get_db_url(self) -> str:

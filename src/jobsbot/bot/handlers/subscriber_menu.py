@@ -15,6 +15,7 @@ from aiogram.types import (
 
 from jobsbot.bot.handlers.admin_menu import get_admin_menu_rows
 from jobsbot.bot.push import resend_matching_backlog
+from jobsbot.config import settings
 from jobsbot.processing.languages import CATEGORIES, LANGUAGES, languages_in_category
 from jobsbot.processing.stack_tags import STACK_TAGS, visible_tag_keys
 from jobsbot.processing.work_formats import WORK_FORMATS
@@ -35,6 +36,7 @@ router = Router()
 BTN_ADD_STACK = "➕ Добавить стек"
 BTN_CITY = "🏙 Город"
 BTN_WORK_FORMAT = "🧭 Формат работы"
+BTN_INTERVIEW_PREP = "🎯 Подготовка к интервью"
 BTN_VIEW = "👀 Смотреть вакансии"
 BTN_STOP = "⏸ Остановить рассылку"
 
@@ -45,7 +47,7 @@ CITY_CLEAR_WORDS = {"-", "везде", "все", "всё"}
 
 # Used to keep other menu buttons from being swallowed as free-text input
 # by whichever FSM state happens to be waiting (city, report comment, etc.)
-MENU_BUTTON_TEXTS = {BTN_ADD_STACK, BTN_CITY, BTN_WORK_FORMAT, BTN_VIEW, BTN_STOP}
+MENU_BUTTON_TEXTS = {BTN_ADD_STACK, BTN_CITY, BTN_WORK_FORMAT, BTN_INTERVIEW_PREP, BTN_VIEW, BTN_STOP}
 
 
 class StackFSM(StatesGroup):
@@ -69,6 +71,8 @@ def build_menu_keyboard(extra_rows: list[list[KeyboardButton]] | None = None) ->
         [KeyboardButton(text=BTN_ADD_STACK), KeyboardButton(text=BTN_CITY), KeyboardButton(text=BTN_WORK_FORMAT)],
         [KeyboardButton(text=BTN_VIEW), KeyboardButton(text=BTN_STOP)],
     ]
+    if settings.gemini_enabled:
+        rows.append([KeyboardButton(text=BTN_INTERVIEW_PREP)])
     rows.extend(extra_rows or [])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
