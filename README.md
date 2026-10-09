@@ -185,7 +185,7 @@ PYTHONPATH=src pytest tests/ -v
 | `GROUP_CHAT_ID` | нет | — (отключено) | id группы для рассылки вакансий в топики форума, см. раздел выше |
 | `GROUP_BROADCAST_INTERVAL_SECONDS` | нет | `180` | Как часто (сек) проверять новые вакансии для рассылки в топики группы |
 | `GEMINI_API_KEY` | нет | — (отключено) | Ключ для кнопок «🎯 Подготовка к интервью» / «✨ Улучшить резюме», см. раздел выше. Без ключа кнопки не показываются |
-| `GEMINI_MODEL` | нет | `gemini-2.0-flash` | Какую модель Gemini использовать |
+| `GEMINI_MODEL` | нет | `gemini-3.8-flash` | Какую модель Gemini использовать |
 | `DB_HOST` | нет | `postgres` | Хост Postgres. `postgres` — имя сервиса в docker-compose; для локального запуска без Docker — `localhost` |
 | `DB_PORT` | нет | `5432` | Порт Postgres |
 | `DB_NAME` | нет | `jobsbot` | Имя базы данных |

@@ -9,13 +9,13 @@ from jobsbot.config import settings
 @pytest.fixture(autouse=True)
 def _gemini_configured(monkeypatch):
     monkeypatch.setattr(settings, "gemini_api_key", "test-key")
-    monkeypatch.setattr(settings, "gemini_model", "gemini-2.0-flash")
+    monkeypatch.setattr(settings, "gemini_model", "gemini-3.8-flash")
 
 
 @pytest.mark.asyncio
 @respx.mock
 async def test_generate_text_only_returns_text():
-    respx.post(f"{gemini_client.API_BASE}/gemini-2.0-flash:generateContent").mock(
+    respx.post(f"{gemini_client.API_BASE}/gemini-3.8-flash:generateContent").mock(
         return_value=httpx.Response(
             200,
             json={"candidates": [{"content": {"parts": [{"text": "Привет!"}]}, "finishReason": "STOP"}]},
@@ -28,7 +28,7 @@ async def test_generate_text_only_returns_text():
 @pytest.mark.asyncio
 @respx.mock
 async def test_generate_sends_inline_file_when_given():
-    route = respx.post(f"{gemini_client.API_BASE}/gemini-2.0-flash:generateContent").mock(
+    route = respx.post(f"{gemini_client.API_BASE}/gemini-3.8-flash:generateContent").mock(
         return_value=httpx.Response(
             200, json={"candidates": [{"content": {"parts": [{"text": "ok"}]}}]}
         )
@@ -54,7 +54,7 @@ async def test_generate_raises_without_api_key(monkeypatch):
 @pytest.mark.asyncio
 @respx.mock
 async def test_generate_raises_on_empty_candidates():
-    respx.post(f"{gemini_client.API_BASE}/gemini-2.0-flash:generateContent").mock(
+    respx.post(f"{gemini_client.API_BASE}/gemini-3.8-flash:generateContent").mock(
         return_value=httpx.Response(200, json={"candidates": [], "promptFeedback": {"blockReason": "SAFETY"}})
     )
     with pytest.raises(gemini_client.GeminiError, match="SAFETY"):
@@ -64,7 +64,7 @@ async def test_generate_raises_on_empty_candidates():
 @pytest.mark.asyncio
 @respx.mock
 async def test_generate_raises_on_http_error():
-    respx.post(f"{gemini_client.API_BASE}/gemini-2.0-flash:generateContent").mock(
+    respx.post(f"{gemini_client.API_BASE}/gemini-3.8-flash:generateContent").mock(
         return_value=httpx.Response(500, text="internal error")
     )
     with pytest.raises(gemini_client.GeminiError):

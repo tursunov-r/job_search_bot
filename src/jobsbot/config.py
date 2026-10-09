@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     # Optional — the "🎯 Подготовка к интервью" button is hidden entirely
     # until this is set (no Gemini account needed to run the bot otherwise).
     gemini_api_key: str | None = None
-    gemini_model: str = "gemini-2.0-flash"
+    gemini_model: str = "gemini-3.8-flash"
 
     db_host: str = "postgres"
     db_port: int = 5432
