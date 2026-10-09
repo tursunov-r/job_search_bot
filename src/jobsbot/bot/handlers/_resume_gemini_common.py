@@ -16,6 +16,7 @@ from aiogram.types import BufferedInputFile, Document, Message
 from aiogram.types import ReplyKeyboardMarkup
 
 from jobsbot.ai.gemini_client import GeminiError, generate
+from jobsbot.bot.handlers.subscriber_menu import clear_system_message, send_system_message
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,9 @@ async def run_resume_prompt(
     failure_text: str,
 ) -> None:
     doc = message.document
-    status = await message.answer("Читаю резюме — это может занять минуту...")
+    status = await send_system_message(
+        message.bot, message.from_user.id, "Читаю резюме — это может занять минуту..."
+    )
 
     buffer = await message.bot.download(doc.file_id)
     file_bytes = buffer.read()
@@ -72,5 +75,5 @@ async def run_resume_prompt(
         del file_bytes, buffer
 
     output = BufferedInputFile(result_text.encode("utf-8"), filename=output_filename)
+    await clear_system_message(message.bot, message.from_user.id)
     await message.answer_document(output, caption=caption, reply_markup=reply_markup)
-    await status.delete()

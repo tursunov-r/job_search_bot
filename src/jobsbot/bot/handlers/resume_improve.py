@@ -22,6 +22,7 @@ from jobsbot.bot.handlers.subscriber_menu import (
     BTN_RESUME_IMPROVE,
     MENU_BUTTON_TEXTS,
     current_menu_keyboard,
+    send_system_message,
 )
 from jobsbot.config import settings
 
@@ -44,17 +45,23 @@ async def handle_resume_improve_button(message: Message, state: FSMContext) -> N
         return
     await delete_quietly(message)
     await state.set_state(ResumeImproveFSM.waiting_resume)
-    await message.answer(
+    await send_system_message(
+        message.bot,
+        message.from_user.id,
         "Пришли файл резюме (PDF, TXT или MD, до 10 МБ) — усилю формулировки и добавлю "
         "ориентировочные метрики там, где это естественно, но без выдумывания новых компаний, "
         "проектов или технологий, которых у тебя нет.\n\n"
-        "Файл не сохраняется на сервере — используется только для одного анализа."
+        "Файл не сохраняется на сервере — используется только для одного анализа.",
     )
 
 
 @router.message(ResumeImproveFSM.waiting_resume, ~F.document, F.text.not_in(MENU_BUTTON_TEXTS))
 async def handle_resume_improve_non_document(message: Message) -> None:
-    await message.answer("Пришли резюме как файл (PDF, TXT или MD), не текстом.")
+    if message.from_user is None:
+        return
+    await send_system_message(
+        message.bot, message.from_user.id, "Пришли резюме как файл (PDF, TXT или MD), не текстом."
+    )
 
 
 @router.message(ResumeImproveFSM.waiting_resume, F.document)
@@ -64,7 +71,7 @@ async def handle_resume_document(message: Message, state: FSMContext) -> None:
 
     error = validate_resume_document(message.document)
     if error:
-        await message.answer(error)
+        await send_system_message(message.bot, message.from_user.id, error)
         return
 
     await state.clear()

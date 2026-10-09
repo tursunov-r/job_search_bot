@@ -271,6 +271,21 @@ async def update_subscriber_work_formats(
     return subscriber
 
 
+async def get_subscriber_by_telegram_id(session: AsyncSession, telegram_user_id: int) -> Subscriber | None:
+    result = await session.exec(select(Subscriber).where(Subscriber.telegram_user_id == telegram_user_id))
+    return result.first()
+
+
+async def set_last_bot_message_id(session: AsyncSession, telegram_user_id: int, message_id: int | None) -> None:
+    result = await session.exec(select(Subscriber).where(Subscriber.telegram_user_id == telegram_user_id))
+    subscriber = result.first()
+    if subscriber is None:
+        return
+    subscriber.last_bot_message_id = message_id
+    session.add(subscriber)
+    await session.commit()
+
+
 async def update_vacancy_details(
     session: AsyncSession,
     vacancy_id: int,

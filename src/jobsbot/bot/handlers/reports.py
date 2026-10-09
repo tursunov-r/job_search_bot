@@ -6,7 +6,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
-from jobsbot.bot.handlers.subscriber_menu import MENU_BUTTON_TEXTS, current_menu_keyboard
+from jobsbot.bot.handlers.subscriber_menu import MENU_BUTTON_TEXTS, current_menu_keyboard, send_system_message
 from jobsbot.bot.permissions import has_permission, is_super_admin
 from jobsbot.config import settings
 from jobsbot.storage.db import async_session
@@ -87,8 +87,10 @@ async def handle_report_button(callback: CallbackQuery, state: FSMContext) -> No
     await state.set_state(ReportFSM.waiting_comment)
     await state.update_data(vacancy_id=vacancy_id)
     await callback.answer()
-    await callback.message.answer(
-        "Напиши, что не так с этой вакансией (без комментария пожаловаться нельзя):"
+    await send_system_message(
+        callback.bot,
+        callback.from_user.id,
+        "Напиши, что не так с этой вакансией (без комментария пожаловаться нельзя):",
     )
 
 
@@ -99,7 +101,9 @@ async def handle_report_comment(message: Message, state: FSMContext) -> None:
 
     comment = (message.text or "").strip()
     if not comment:
-        await message.answer("Комментарий не может быть пустым — напиши, что не так с вакансией:")
+        await send_system_message(
+            message.bot, message.from_user.id, "Комментарий не может быть пустым — напиши, что не так с вакансией:"
+        )
         return
 
     data = await state.get_data()
@@ -109,7 +113,9 @@ async def handle_report_comment(message: Message, state: FSMContext) -> None:
     async with async_session() as session:
         vacancy = await get_vacancy_by_id(session, vacancy_id)
         if vacancy is None:
-            await message.answer("Вакансия не найдена (возможно, уже удалена).")
+            await send_system_message(
+                message.bot, message.from_user.id, "Вакансия не найдена (возможно, уже удалена)."
+            )
             return
 
         subscriber = await get_or_create_subscriber(
@@ -118,7 +124,9 @@ async def handle_report_comment(message: Message, state: FSMContext) -> None:
         report = await create_vacancy_report(session, vacancy_id, subscriber.id, comment)
         await set_vacancy_hidden(session, vacancy_id, True)
 
-    await message.answer(
+    await send_system_message(
+        message.bot,
+        message.from_user.id,
         "Спасибо, жалоба отправлена на проверку — пока админ не разберётся, эту вакансию никому не покажем.",
         reply_markup=await current_menu_keyboard(message.from_user.id),
     )

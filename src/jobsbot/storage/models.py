@@ -75,6 +75,12 @@ class Subscriber(SQLModel, table=True):
     languages: str = Field(default="[]")  # JSON array of languages.py keys the subscriber selected
     city: str | None = None  # free-text, matched against Vacancy.location; None = no city filter
     work_formats: str = Field(default="[]")  # JSON array of work_formats.py keys; [] = no filter
+    # The bot's last "system" message (menu prompts/confirmations) to this
+    # subscriber — deleted right before sending the next one, so navigating
+    # the menu doesn't pile up an ever-growing chat history. Never set for
+    # vacancy pushes or generated documents (resume/interview files) —
+    # those are real content the subscriber wants to keep.
+    last_bot_message_id: int | None = None
 
 
 class VacancyDelivery(SQLModel, table=True):

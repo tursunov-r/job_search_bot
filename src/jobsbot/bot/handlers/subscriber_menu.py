@@ -1,7 +1,7 @@
 import json
 import logging
 
-from aiogram import F, Router
+from aiogram import Bot, F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
@@ -22,8 +22,10 @@ from jobsbot.processing.work_formats import WORK_FORMATS
 from jobsbot.storage.db import async_session
 from jobsbot.storage.repo import (
     get_or_create_subscriber,
+    get_subscriber_by_telegram_id,
     pause_subscriber_by_telegram_id,
     resume_subscriber_by_telegram_id,
+    set_last_bot_message_id,
     update_subscriber_city,
     update_subscriber_languages,
     update_subscriber_skills,
@@ -110,6 +112,48 @@ async def _delete_quietly(message: Message) -> None:
         logger.debug("Could not delete message %s (probably harmless)", message.message_id)
 
 
+async def send_system_message(bot: Bot, telegram_user_id: int, text: str, **kwargs) -> Message:
+    """Sends a transient "system" message (menu prompt/confirmation) to a
+    subscriber, first deleting whichever system message we last sent them —
+    so navigating the menu doesn't pile up an ever-growing chat history.
+    Never use this for vacancy pushes or generated documents (resume/
+    interview files) — those are real content the subscriber wants to keep."""
+    async with async_session() as session:
+        subscriber = await get_subscriber_by_telegram_id(session, telegram_user_id)
+        previous_message_id = subscriber.last_bot_message_id if subscriber else None
+
+    if previous_message_id:
+        try:
+            await bot.delete_message(telegram_user_id, previous_message_id)
+        except Exception:
+            logger.debug("Could not delete previous system message %s (probably harmless)", previous_message_id)
+
+    sent = await bot.send_message(telegram_user_id, text, **kwargs)
+
+    async with async_session() as session:
+        await set_last_bot_message_id(session, telegram_user_id, sent.message_id)
+
+    return sent
+
+
+async def clear_system_message(bot: Bot, telegram_user_id: int) -> None:
+    """Deletes and un-tracks the subscriber's last system message, if any —
+    used right before sending real content (a generated document) so that
+    content is never itself subject to later clean-up, and the stale prompt
+    that led up to it doesn't linger untracked."""
+    async with async_session() as session:
+        subscriber = await get_subscriber_by_telegram_id(session, telegram_user_id)
+        message_id = subscriber.last_bot_message_id if subscriber else None
+        if message_id:
+            await set_last_bot_message_id(session, telegram_user_id, None)
+
+    if message_id:
+        try:
+            await bot.delete_message(telegram_user_id, message_id)
+        except Exception:
+            logger.debug("Could not delete system message %s (probably harmless)", message_id)
+
+
 def _build_category_keyboard() -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton(text=label, callback_data=f"{CALLBACK_PREFIX}:cat:{key}")]
@@ -180,7 +224,9 @@ async def handle_add_stack_button(message: Message, state: FSMContext) -> None:
         return
     await _delete_quietly(message)
     await state.clear()
-    await message.answer(CATEGORY_PICKER_TEXT, reply_markup=_build_category_keyboard())
+    await send_system_message(
+        message.bot, message.from_user.id, CATEGORY_PICKER_TEXT, reply_markup=_build_category_keyboard()
+    )
 
 
 @router.callback_query(F.data.startswith(f"{CALLBACK_PREFIX}:cat:"))
@@ -343,14 +389,12 @@ async def handle_apply_stack(callback: CallbackQuery, state: FSMContext) -> None
         await update_subscriber_skills(session, subscriber, list(new_skills))
 
     lang_label = LANGUAGES[language_key].label
-    await callback.message.edit_text(
+    await send_system_message(
+        callback.bot,
+        callback.from_user.id,
         f"Готово — {lang_label} добавлен в твой профиль. Нажми «{BTN_ADD_STACK}» ещё раз, "
-        f"чтобы добавить другой язык, или «{BTN_VIEW}», чтобы начать получать вакансии."
-    )
-    # edit_text can't attach a reply keyboard (Telegram only allows an
-    # inline one there) — a short follow-up is the only way to refresh it.
-    await callback.message.answer(
-        "Меню ниже обновлено.", reply_markup=await current_menu_keyboard(callback.from_user.id)
+        f"чтобы добавить другой язык, или «{BTN_VIEW}», чтобы начать получать вакансии.",
+        reply_markup=await current_menu_keyboard(callback.from_user.id),
     )
     await callback.answer()
 
@@ -379,7 +423,7 @@ async def handle_city_button(message: Message, state: FSMContext) -> None:
             "Напиши город, чтобы получать только вакансии из него "
             "(удалённые вакансии приходят всегда, независимо от города)."
         )
-    await message.answer(text, reply_markup=await current_menu_keyboard(message.from_user.id))
+    await send_system_message(message.bot, message.from_user.id, text, reply_markup=await current_menu_keyboard(message.from_user.id))
 
 
 @router.message(CityFSM.waiting_input, F.text.not_in(MENU_BUTTON_TEXTS))
@@ -400,9 +444,19 @@ async def handle_city_input(message: Message, state: FSMContext) -> None:
 
     keyboard = await current_menu_keyboard(message.from_user.id)
     if city:
-        await message.answer(f"Готово — буду присылать вакансии из города «{city}» (плюс удалённые).", reply_markup=keyboard)
+        await send_system_message(
+            message.bot,
+            message.from_user.id,
+            f"Готово — буду присылать вакансии из города «{city}» (плюс удалённые).",
+            reply_markup=keyboard,
+        )
     else:
-        await message.answer("Готово — фильтр по городу убран, присылаю вакансии из всех городов.", reply_markup=keyboard)
+        await send_system_message(
+            message.bot,
+            message.from_user.id,
+            "Готово — фильтр по городу убран, присылаю вакансии из всех городов.",
+            reply_markup=keyboard,
+        )
 
 
 def _build_work_format_keyboard(chosen: list[str]) -> InlineKeyboardMarkup:
@@ -436,7 +490,9 @@ async def handle_work_format_button(message: Message, state: FSMContext) -> None
 
     await state.set_state(WorkFormatFSM.picking)
     await state.update_data(chosen=chosen)
-    await message.answer(
+    await send_system_message(
+        message.bot,
+        message.from_user.id,
         "Выбери желаемый формат работы (можно несколько, или ничего — тогда без фильтра):",
         reply_markup=_build_work_format_keyboard(chosen),
     )
@@ -482,11 +538,8 @@ async def handle_apply_work_format(callback: CallbackQuery, state: FSMContext) -
         text = f"Готово — буду присылать вакансии с форматом: {labels}."
     else:
         text = "Готово — фильтр по формату работы убран, присылаю вакансии любого формата."
-    await callback.message.edit_text(text)
-    # edit_text can't attach a reply keyboard (Telegram only allows an
-    # inline one there) — a short follow-up is the only way to refresh it.
-    await callback.message.answer(
-        "Меню ниже обновлено.", reply_markup=await current_menu_keyboard(callback.from_user.id)
+    await send_system_message(
+        callback.bot, callback.from_user.id, text, reply_markup=await current_menu_keyboard(callback.from_user.id)
     )
     await callback.answer()
 
@@ -505,19 +558,26 @@ async def handle_view_vacancies(message: Message) -> None:
 
     keyboard = await current_menu_keyboard(message.from_user.id)
     if subscriber is None:
-        await message.answer("Сначала напиши /start", reply_markup=keyboard)
+        await send_system_message(message.bot, message.from_user.id, "Сначала напиши /start", reply_markup=keyboard)
         return
     if subscriber.status == "blocked":
-        await message.answer("Доступ ограничен администратором.", reply_markup=keyboard)
+        await send_system_message(
+            message.bot, message.from_user.id, "Доступ ограничен администратором.", reply_markup=keyboard
+        )
         return
 
     sent = await resend_matching_backlog(message.bot, subscriber)
     if sent:
-        await message.answer(
-            f"Рассылка включена. Нашёл и отправил {sent} подходящих вакансий за неделю.", reply_markup=keyboard
+        await send_system_message(
+            message.bot,
+            message.from_user.id,
+            f"Рассылка включена. Нашёл и отправил {sent} подходящих вакансий за неделю.",
+            reply_markup=keyboard,
         )
     else:
-        await message.answer(
+        await send_system_message(
+            message.bot,
+            message.from_user.id,
             "Рассылка включена. Подходящих вакансий за последнюю неделю пока нет — "
             "пришлю, как только появятся новые.",
             reply_markup=keyboard,
@@ -536,7 +596,9 @@ async def handle_stop_broadcast(message: Message) -> None:
         )
         await pause_subscriber_by_telegram_id(session, message.from_user.id)
 
-    await message.answer(
+    await send_system_message(
+        message.bot,
+        message.from_user.id,
         f"Рассылка остановлена. Включить снова — кнопка «{BTN_VIEW}».",
         reply_markup=await current_menu_keyboard(message.from_user.id),
     )
