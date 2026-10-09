@@ -69,3 +69,47 @@ async def test_generate_raises_on_http_error():
     )
     with pytest.raises(gemini_client.GeminiError):
         await gemini_client.generate("привет")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_generate_retries_on_503_then_succeeds(monkeypatch):
+    monkeypatch.setattr(gemini_client, "RETRY_DELAY_SECONDS", 0)
+    route = respx.post(f"{gemini_client.API_BASE}/gemini-3.8-flash:generateContent")
+    route.side_effect = [
+        httpx.Response(503, json={"error": {"message": "high demand"}}),
+        httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "ок"}]}}]}),
+    ]
+
+    result = await gemini_client.generate("привет")
+
+    assert result == "ок"
+    assert route.call_count == 2
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_generate_gives_up_after_max_attempts_on_503(monkeypatch):
+    monkeypatch.setattr(gemini_client, "RETRY_DELAY_SECONDS", 0)
+    route = respx.post(f"{gemini_client.API_BASE}/gemini-3.8-flash:generateContent").mock(
+        return_value=httpx.Response(503, json={"error": {"message": "high demand"}})
+    )
+
+    with pytest.raises(gemini_client.GeminiError, match="503"):
+        await gemini_client.generate("привет")
+
+    assert route.call_count == gemini_client.MAX_ATTEMPTS
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_generate_does_not_retry_non_retryable_status(monkeypatch):
+    monkeypatch.setattr(gemini_client, "RETRY_DELAY_SECONDS", 0)
+    route = respx.post(f"{gemini_client.API_BASE}/gemini-3.8-flash:generateContent").mock(
+        return_value=httpx.Response(400, json={"error": {"message": "bad request"}})
+    )
+
+    with pytest.raises(gemini_client.GeminiError, match="400"):
+        await gemini_client.generate("привет")
+
+    assert route.call_count == 1

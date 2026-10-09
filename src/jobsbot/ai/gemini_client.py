@@ -7,6 +7,7 @@ google-genai/google-generativeai, since the only thing needed here is
 whole SDK for that would be overkill.
 """
 
+import asyncio
 import base64
 import logging
 
@@ -18,6 +19,15 @@ logger = logging.getLogger(__name__)
 
 API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 REQUEST_TIMEOUT_SECONDS = 120.0
+
+# Confirmed live: gemini-3.8-flash returns 503 "high demand, try again
+# later" fairly often even under normal load — a bare retry (no backoff
+# needed, it's not a hard rate limit) succeeded immediately every time
+# this was observed, so retrying a couple of times beats surfacing a
+# transient failure as "try again later" to the user on the first miss.
+RETRYABLE_STATUS_CODES = {503, 429}
+MAX_ATTEMPTS = 3
+RETRY_DELAY_SECONDS = 3.0
 
 
 class GeminiError(Exception):
@@ -40,15 +50,22 @@ async def generate(prompt: str, file_bytes: bytes | None = None, mime_type: str 
     payload = {"contents": [{"parts": parts}]}
 
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
-        try:
-            response = await client.post(url, params={"key": settings.gemini_api_key}, json=payload)
-            response.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            logger.warning("Gemini request failed: %s — %s", exc, exc.response.text[:500])
-            raise GeminiError(f"Gemini вернул ошибку: {exc.response.status_code}") from exc
-        except httpx.HTTPError as exc:
-            logger.warning("Gemini request failed: %s", exc)
-            raise GeminiError("Не удалось связаться с Gemini") from exc
+        response = None
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            try:
+                response = await client.post(url, params={"key": settings.gemini_api_key}, json=payload)
+                response.raise_for_status()
+                break
+            except httpx.HTTPStatusError as exc:
+                logger.warning("Gemini request failed: %s — %s", exc, exc.response.text[:500])
+                if exc.response.status_code not in RETRYABLE_STATUS_CODES or attempt == MAX_ATTEMPTS:
+                    raise GeminiError(f"Gemini вернул ошибку: {exc.response.status_code}") from exc
+            except httpx.HTTPError as exc:
+                logger.warning("Gemini request failed: %s", exc)
+                raise GeminiError("Не удалось связаться с Gemini") from exc
+
+            logger.info("Retrying Gemini request (attempt %d/%d)", attempt + 1, MAX_ATTEMPTS)
+            await asyncio.sleep(RETRY_DELAY_SECONDS)
 
     data = response.json()
     candidates = data.get("candidates") or []
