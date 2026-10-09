@@ -13,6 +13,7 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
 )
 
+from jobsbot.ads.campaigns import send_broadcast_now
 from jobsbot.bot.permissions import PERMISSIONS, get_permissions, has_permission, is_super_admin
 from jobsbot.config import settings
 from jobsbot.storage.db import async_session
@@ -44,6 +45,8 @@ class AdminFSM(StatesGroup):
     block_user = State()
     add_staff_id = State()
     add_staff_permissions = State()
+    broadcast_text = State()
+    broadcast_confirm = State()
 
 
 async def get_admin_menu_rows(user_id: int) -> list[list[KeyboardButton]]:
@@ -234,7 +237,7 @@ async def handle_block_user_input(message: Message, state: FSMContext) -> None:
 async def handle_ads_button(message: Message) -> None:
     if message.from_user is None or not await has_permission(message.from_user.id, "manage_ads"):
         return
-    await message.answer(
+    text = (
         "Команды для рекламных кампаний:\n"
         "/newad Название | Текст — создать\n"
         "/ads — список\n"
@@ -242,6 +245,78 @@ async def handle_ads_button(message: Message) -> None:
         "/canceladc <id> — отменить\n"
         "/broadcastad <id> — разослать сейчас"
     )
+    keyboard = None
+    if is_super_admin(message.from_user.id):
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="📝 Отправить всем сейчас", callback_data="ad:start")]]
+        )
+    await message.answer(text, reply_markup=keyboard)
+
+
+@router.callback_query(F.data == "ad:start")
+async def handle_broadcast_start(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user is None or not is_super_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    await state.set_state(AdminFSM.broadcast_text)
+    await callback.message.answer(
+        "Пришли текст рекламного сообщения — он уйдёт всем пользователям, которые не блокировали бота "
+        "(включая тех, у кого рассылка вакансий на паузе)."
+    )
+    await callback.answer()
+
+
+@router.message(AdminFSM.broadcast_text)
+async def handle_broadcast_text_input(message: Message, state: FSMContext) -> None:
+    if message.from_user is None or not is_super_admin(message.from_user.id):
+        await state.clear()
+        return
+    if message.text in MENU_BUTTON_TEXTS:
+        await state.clear()
+        await message.answer("Отменено. Нажми кнопку меню ещё раз.")
+        return
+
+    text = (message.text or "").strip()
+    if not text:
+        await message.answer("Текст не может быть пустым — пришли текст объявления.")
+        return
+
+    await state.update_data(broadcast_text=text)
+    await state.set_state(AdminFSM.broadcast_confirm)
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Отправить всем", callback_data="ad:confirm"),
+                InlineKeyboardButton(text="❌ Отмена", callback_data="ad:cancel"),
+            ]
+        ]
+    )
+    await message.answer(f"Предпросмотр:\n\n{text}\n\nОтправить это всем пользователям?", reply_markup=keyboard)
+
+
+@router.callback_query(AdminFSM.broadcast_confirm, F.data == "ad:cancel")
+async def handle_broadcast_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user is None or not is_super_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    await state.clear()
+    await callback.message.edit_text("Отменено, рассылка не отправлена.")
+    await callback.answer()
+
+
+@router.callback_query(AdminFSM.broadcast_confirm, F.data == "ad:confirm")
+async def handle_broadcast_confirm(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user is None or not is_super_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    data = await state.get_data()
+    text = data.get("broadcast_text")
+    await state.clear()
+    await callback.message.edit_text("Отправляю...")
+    await callback.answer()
+
+    campaign, sent, total = await send_broadcast_now(callback.bot, text)
+    await callback.message.edit_text(f"Готово — отправлено {sent} из {total} пользователей (кампания #{campaign.id}).")
 
 
 # ---- Staff (super admin only) ----

@@ -8,7 +8,7 @@ from jobsbot.storage.db import async_session
 from jobsbot.storage.models import AdCampaign
 from jobsbot.storage.repo import (
     get_active_campaigns,
-    get_active_subscribers,
+    get_broadcastable_subscribers,
     get_last_impression_sent_at,
     record_ad_impression,
 )
@@ -24,9 +24,11 @@ def _is_due(campaign: AdCampaign, last_sent_at: datetime | None) -> bool:
     return datetime.now(timezone.utc) >= last_sent_at + timedelta(hours=campaign.send_interval_hours)
 
 
-async def broadcast_campaign_now(bot: Bot, campaign: AdCampaign) -> None:
+async def broadcast_campaign_now(bot: Bot, campaign: AdCampaign) -> tuple[int, int]:
+    """Returns (sent, total) — total is everyone who hasn't blocked the bot,
+    sent is how many of those actually got the message this round."""
     async with async_session() as session:
-        subscribers = await get_active_subscribers(session)
+        subscribers = await get_broadcastable_subscribers(session)
         sent = 0
         for subscriber in subscribers:
             try:
@@ -35,6 +37,9 @@ async def broadcast_campaign_now(bot: Bot, campaign: AdCampaign) -> None:
                 sent += 1
             except TelegramForbiddenError:
                 await record_ad_impression(session, campaign.id, subscriber.id, "blocked")
+                subscriber.status = "blocked"
+                session.add(subscriber)
+                await session.commit()
             except TelegramRetryAfter as exc:
                 logger.warning("Ad broadcast rate limited, retry after %s", exc.retry_after)
                 break
@@ -42,6 +47,7 @@ async def broadcast_campaign_now(bot: Bot, campaign: AdCampaign) -> None:
                 logger.exception("Failed to send ad campaign %s to %s", campaign.id, subscriber.telegram_user_id)
                 await record_ad_impression(session, campaign.id, subscriber.id, "failed")
         logger.info("Ad campaign '%s' broadcast to %d/%d subscribers", campaign.name, sent, len(subscribers))
+        return sent, len(subscribers)
 
 
 async def broadcast_due_campaigns(bot: Bot) -> None:

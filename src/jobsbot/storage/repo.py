@@ -158,6 +158,15 @@ async def get_active_subscribers(session: AsyncSession) -> list[Subscriber]:
     return list(result.all())
 
 
+async def get_broadcastable_subscribers(session: AsyncSession) -> list[Subscriber]:
+    """Everyone who hasn't blocked the bot (or been blocked by an admin) —
+    ad campaigns go out to this wider set, not just "active" (which only
+    means "has vacancy delivery turned on"). A "paused" subscriber is still
+    a real, reachable user."""
+    result = await session.exec(select(Subscriber).where(Subscriber.status != "blocked"))
+    return list(result.all())
+
+
 async def get_subscriber_counts_by_status(session: AsyncSession) -> dict[str, int]:
     """Counts by Subscriber.status ('active', 'paused', 'blocked') — used by
     the super admin's "📊 Статистика" button. Doesn't include a 'total' key;
