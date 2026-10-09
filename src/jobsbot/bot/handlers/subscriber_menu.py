@@ -26,7 +26,7 @@ from jobsbot.storage.repo import (
     pause_subscriber_by_telegram_id,
     resume_subscriber_by_telegram_id,
     set_last_bot_message_id,
-    update_subscriber_city,
+    update_subscriber_cities,
     update_subscriber_languages,
     update_subscriber_skills,
     update_subscriber_work_formats,
@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 BTN_ADD_STACK = "➕ Добавить стек"
-BTN_CITY = "🏙 Город"
+BTN_CITY = "🏙 Города"
 BTN_WORK_FORMAT = "🧭 Формат работы"
 BTN_INTERVIEW_PREP = "🎯 Подготовка к интервью"
 BTN_RESUME_IMPROVE = "✨ Улучшить резюме"
@@ -410,17 +410,20 @@ async def handle_city_button(message: Message, state: FSMContext) -> None:
         subscriber = await get_or_create_subscriber(
             session, telegram_user_id=message.from_user.id, username=message.from_user.username
         )
-        current_city = subscriber.city
+        current_cities = _json_list(subscriber.cities)
 
-    if current_city:
+    if current_cities:
+        cities_label = ", ".join(current_cities)
         text = (
-            f"Сейчас фильтр по городу: «{current_city}».\n"
-            f"Напиши новый город, или «-», чтобы убрать фильтр (будут приходить вакансии из всех городов)."
+            f"Сейчас фильтр по городам: «{cities_label}».\n"
+            f"Напиши новые города через запятую (например: Алматы, Москва), или «-», "
+            f"чтобы убрать фильтр (будут приходить вакансии из всех городов)."
         )
     else:
         text = (
-            "Фильтр по городу не задан — приходят вакансии из всех городов.\n"
-            "Напиши город, чтобы получать только вакансии из него "
+            "Фильтр по городам не задан — приходят вакансии из всех городов.\n"
+            "Напиши один или несколько городов через запятую (например: Алматы, Москва), "
+            "чтобы получать только вакансии из них "
             "(удалённые вакансии приходят всегда, независимо от города)."
         )
     await send_system_message(message.bot, message.from_user.id, text, reply_markup=await current_menu_keyboard(message.from_user.id))
@@ -434,27 +437,31 @@ async def handle_city_input(message: Message, state: FSMContext) -> None:
     await state.clear()
 
     text = message.text.strip()
-    city = None if text.lower() in CITY_CLEAR_WORDS else text
+    if text.lower() in CITY_CLEAR_WORDS:
+        cities = []
+    else:
+        cities = [part.strip() for part in text.split(",") if part.strip()]
 
     async with async_session() as session:
         subscriber = await get_or_create_subscriber(
             session, telegram_user_id=message.from_user.id, username=message.from_user.username
         )
-        await update_subscriber_city(session, subscriber, city)
+        await update_subscriber_cities(session, subscriber, cities)
 
     keyboard = await current_menu_keyboard(message.from_user.id)
-    if city:
+    if cities:
+        cities_label = ", ".join(cities)
         await send_system_message(
             message.bot,
             message.from_user.id,
-            f"Готово — буду присылать вакансии из города «{city}» (плюс удалённые).",
+            f"Готово — буду присылать вакансии из городов «{cities_label}» (плюс удалённые).",
             reply_markup=keyboard,
         )
     else:
         await send_system_message(
             message.bot,
             message.from_user.id,
-            "Готово — фильтр по городу убран, присылаю вакансии из всех городов.",
+            "Готово — фильтр по городам убран, присылаю вакансии из всех городов.",
             reply_markup=keyboard,
         )
 

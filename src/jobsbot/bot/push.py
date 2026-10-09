@@ -74,8 +74,8 @@ def _json_list(value: str) -> list[str]:
         return []
 
 
-def _matches_city(vacancy: Vacancy, city: str | None) -> bool:
-    if not city:
+def _matches_city(vacancy: Vacancy, cities: list[str]) -> bool:
+    if not cities:
         return True
     if "remote" in categorize_work_format(vacancy.work_format):
         # Remote-ish vacancies bypass the city filter entirely — some have
@@ -84,7 +84,10 @@ def _matches_city(vacancy: Vacancy, city: str | None) -> bool:
         # so matching location literally would wrongly exclude genuinely
         # remote postings.
         return True
-    return bool(vacancy.location) and vacancy.location.strip().lower() == city.strip().lower()
+    if not vacancy.location:
+        return False
+    location = vacancy.location.strip().lower()
+    return any(location == city.strip().lower() for city in cities)
 
 
 def _matches_work_format(vacancy: Vacancy, selected_formats: list[str]) -> bool:
@@ -97,7 +100,7 @@ def _vacancy_matches(
     vacancy: Vacancy,
     selected_languages: list[str],
     selected_skills: list[str],
-    city: str | None = None,
+    cities: list[str] | None = None,
     work_formats: list[str] | None = None,
 ) -> bool:
     vacancy_languages = _json_list(vacancy.languages)
@@ -106,7 +109,7 @@ def _vacancy_matches(
     return (
         language_ok
         and stack_ok
-        and _matches_city(vacancy, city)
+        and _matches_city(vacancy, cities or [])
         and _matches_work_format(vacancy, work_formats or [])
     )
 
@@ -163,6 +166,7 @@ async def push_new_vacancies(bot: Bot) -> None:
 
             selected_languages = _json_list(subscriber.languages)
             selected_skills = _json_list(subscriber.skills)
+            selected_cities = _json_list(subscriber.cities)
             selected_work_formats = _json_list(subscriber.work_formats)
             cursor_id = subscriber.last_vacancy_sent_id
             delivered_ids = await get_delivered_vacancy_ids(
@@ -177,7 +181,7 @@ async def push_new_vacancies(bot: Bot) -> None:
                     continue
 
                 if not _vacancy_matches(
-                    vacancy, selected_languages, selected_skills, subscriber.city, selected_work_formats
+                    vacancy, selected_languages, selected_skills, selected_cities, selected_work_formats
                 ):
                     # Skipped on purpose (doesn't match the subscriber's filters) —
                     # still advance the cursor so it isn't re-checked every cycle.
@@ -214,12 +218,13 @@ async def resend_matching_backlog(bot: Bot, subscriber: Subscriber) -> int:
         candidates = await get_undelivered_recent_vacancies(session, subscriber.id)
         selected_languages = _json_list(subscriber.languages)
         selected_skills = _json_list(subscriber.skills)
+        selected_cities = _json_list(subscriber.cities)
         selected_work_formats = _json_list(subscriber.work_formats)
 
         sent = 0
         for vacancy in candidates:
             if not _vacancy_matches(
-                vacancy, selected_languages, selected_skills, subscriber.city, selected_work_formats
+                vacancy, selected_languages, selected_skills, selected_cities, selected_work_formats
             ):
                 continue
             try:

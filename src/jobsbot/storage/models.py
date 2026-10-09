@@ -73,7 +73,7 @@ class Subscriber(SQLModel, table=True):
     last_interaction_at: datetime | None = None
     skills: str = Field(default="[]")  # JSON array of stack_tags keys the subscriber selected
     languages: str = Field(default="[]")  # JSON array of languages.py keys the subscriber selected
-    city: str | None = None  # free-text, matched against Vacancy.location; None = no city filter
+    cities: str = Field(default="[]")  # JSON array of free-text city names, matched against Vacancy.location; [] = no filter
     work_formats: str = Field(default="[]")  # JSON array of work_formats.py keys; [] = no filter
     # The bot's last "system" message (menu prompts/confirmations) to this
     # subscriber — deleted right before sending the next one, so navigating

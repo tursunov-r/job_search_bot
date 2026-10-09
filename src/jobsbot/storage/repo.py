@@ -253,8 +253,8 @@ async def update_subscriber_languages(
     return subscriber
 
 
-async def update_subscriber_city(session: AsyncSession, subscriber: Subscriber, city: str | None) -> Subscriber:
-    subscriber.city = city
+async def update_subscriber_cities(session: AsyncSession, subscriber: Subscriber, cities: list[str]) -> Subscriber:
+    subscriber.cities = json.dumps(cities)
     session.add(subscriber)
     await session.commit()
     await session.refresh(subscriber)
