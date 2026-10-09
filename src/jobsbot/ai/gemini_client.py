@@ -21,13 +21,14 @@ API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 REQUEST_TIMEOUT_SECONDS = 120.0
 
 # Confirmed live: gemini-3.8-flash returns 503 "high demand, try again
-# later" fairly often even under normal load — a bare retry (no backoff
-# needed, it's not a hard rate limit) succeeded immediately every time
-# this was observed, so retrying a couple of times beats surfacing a
-# transient failure as "try again later" to the user on the first miss.
+# later" often enough that even 3 attempts 3s apart all failed back to
+# back once — bumped to 5 attempts with exponential backoff (2s, 4s, 8s,
+# 16s) to give sustained overload more time to clear, since surfacing a
+# transient failure as "попробуй позже" defeats the point of retrying at
+# all if the delay is too short to matter.
 RETRYABLE_STATUS_CODES = {503, 429}
-MAX_ATTEMPTS = 3
-RETRY_DELAY_SECONDS = 3.0
+MAX_ATTEMPTS = 5
+RETRY_BASE_DELAY_SECONDS = 2.0
 
 
 class GeminiError(Exception):
@@ -64,8 +65,9 @@ async def generate(prompt: str, file_bytes: bytes | None = None, mime_type: str 
                 logger.warning("Gemini request failed: %s", exc)
                 raise GeminiError("Не удалось связаться с Gemini") from exc
 
-            logger.info("Retrying Gemini request (attempt %d/%d)", attempt + 1, MAX_ATTEMPTS)
-            await asyncio.sleep(RETRY_DELAY_SECONDS)
+            delay = RETRY_BASE_DELAY_SECONDS * (2 ** (attempt - 1))
+            logger.info("Retrying Gemini request in %.0fs (attempt %d/%d)", delay, attempt + 1, MAX_ATTEMPTS)
+            await asyncio.sleep(delay)
 
     data = response.json()
     candidates = data.get("candidates") or []

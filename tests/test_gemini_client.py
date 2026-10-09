@@ -74,7 +74,7 @@ async def test_generate_raises_on_http_error():
 @pytest.mark.asyncio
 @respx.mock
 async def test_generate_retries_on_503_then_succeeds(monkeypatch):
-    monkeypatch.setattr(gemini_client, "RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(gemini_client, "RETRY_BASE_DELAY_SECONDS", 0)
     route = respx.post(f"{gemini_client.API_BASE}/gemini-3.8-flash:generateContent")
     route.side_effect = [
         httpx.Response(503, json={"error": {"message": "high demand"}}),
@@ -90,7 +90,7 @@ async def test_generate_retries_on_503_then_succeeds(monkeypatch):
 @pytest.mark.asyncio
 @respx.mock
 async def test_generate_gives_up_after_max_attempts_on_503(monkeypatch):
-    monkeypatch.setattr(gemini_client, "RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(gemini_client, "RETRY_BASE_DELAY_SECONDS", 0)
     route = respx.post(f"{gemini_client.API_BASE}/gemini-3.8-flash:generateContent").mock(
         return_value=httpx.Response(503, json={"error": {"message": "high demand"}})
     )
@@ -104,7 +104,7 @@ async def test_generate_gives_up_after_max_attempts_on_503(monkeypatch):
 @pytest.mark.asyncio
 @respx.mock
 async def test_generate_does_not_retry_non_retryable_status(monkeypatch):
-    monkeypatch.setattr(gemini_client, "RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(gemini_client, "RETRY_BASE_DELAY_SECONDS", 0)
     route = respx.post(f"{gemini_client.API_BASE}/gemini-3.8-flash:generateContent").mock(
         return_value=httpx.Response(400, json={"error": {"message": "bad request"}})
     )
