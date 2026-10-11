@@ -7,6 +7,7 @@ from jobsbot.ingestion.base import RawVacancy
 from jobsbot.ingestion.normalize import clean_raw_vacancy
 from jobsbot.processing.dedup import fingerprint
 from jobsbot.processing.languages import detect_languages, language_matches
+from jobsbot.processing.salary import parse_salary_min_rub
 from jobsbot.storage.models import Vacancy
 from jobsbot.storage.repo import get_vacancy_by_fingerprint, get_vacancy_by_url, insert_vacancy
 
@@ -84,6 +85,7 @@ async def ingest(
         source_id=source_id,
         raw_source_ids=json.dumps([source_id]),
         salary_text=clean.salary_text,
+        salary_min_rub=parse_salary_min_rub(clean.salary_text),
         location=clean.location,
         work_format=clean.work_format,
         experience=clean.experience,

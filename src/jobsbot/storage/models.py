@@ -32,6 +32,12 @@ class Vacancy(SQLModel, table=True):
     source_id: int = Field(foreign_key="sources.id")
     raw_source_ids: str = Field(default="[]")  # JSON array of source_ids (cross-post tracking)
     salary_text: str | None = None
+    # Parsed once from salary_text (see processing/salary.py) — None means
+    # either no salary stated, a non-RUB currency, or "up to Y" with no
+    # stated floor, not necessarily "zero". Used only for the >= filter in
+    # push.py::_matches_salary, never shown to the user directly (salary_text
+    # already is).
+    salary_min_rub: int | None = Field(default=None, index=True)
     location: str | None = None
     work_format: str | None = None  # remote / office / hybrid, as stated by the source
     experience: str | None = None
@@ -87,6 +93,11 @@ class Subscriber(SQLModel, table=True):
     # — the gate is for *new* users, not a retroactive lockout). False
     # means /start should check membership before showing the menu.
     subscription_gate_passed: bool = Field(default=False)
+    # Minimum desired salary in RUB, free-text entered by the subscriber;
+    # None = no filter. Compared against Vacancy.salary_min_rub, which is
+    # None for non-RUB postings or ones with no stated floor — those always
+    # pass the filter rather than being wrongly excluded.
+    min_salary: int | None = None
 
 
 class VacancyDelivery(SQLModel, table=True):

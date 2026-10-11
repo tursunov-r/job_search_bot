@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 
 from aiogram import Bot, F, Router
 from aiogram.fsm.context import FSMContext
@@ -28,6 +29,7 @@ from jobsbot.storage.repo import (
     set_last_bot_message_id,
     update_subscriber_cities,
     update_subscriber_languages,
+    update_subscriber_min_salary,
     update_subscriber_skills,
     update_subscriber_work_formats,
 )
@@ -38,6 +40,7 @@ router = Router()
 BTN_ADD_STACK = "➕ Добавить стек"
 BTN_CITY = "🏙 Города"
 BTN_WORK_FORMAT = "🧭 Формат работы"
+BTN_SALARY = "💰 Зарплата от"
 BTN_INTERVIEW_PREP = "🎯 Подготовка к интервью"
 BTN_RESUME_IMPROVE = "✨ Улучшить резюме"
 BTN_VIEW = "👀 Смотреть вакансии"
@@ -47,6 +50,7 @@ CALLBACK_PREFIX = "addstack"
 WORK_FORMAT_CALLBACK_PREFIX = "workformat"
 
 CITY_CLEAR_WORDS = {"-", "везде", "все", "всё"}
+SALARY_CLEAR_WORDS = {"-", "любая", "все", "всё"}
 
 # Used to keep other menu buttons from being swallowed as free-text input
 # by whichever FSM state happens to be waiting (city, report comment, etc.)
@@ -54,6 +58,7 @@ MENU_BUTTON_TEXTS = {
     BTN_ADD_STACK,
     BTN_CITY,
     BTN_WORK_FORMAT,
+    BTN_SALARY,
     BTN_INTERVIEW_PREP,
     BTN_RESUME_IMPROVE,
     BTN_VIEW,
@@ -73,6 +78,10 @@ class WorkFormatFSM(StatesGroup):
     picking = State()
 
 
+class SalaryFSM(StatesGroup):
+    waiting_input = State()
+
+
 def build_menu_keyboard(extra_rows: list[list[KeyboardButton]] | None = None) -> ReplyKeyboardMarkup:
     # Telegram only ever shows one reply keyboard at a time, so staff/admin
     # rows (if any) get appended here rather than sent as a separate
@@ -80,6 +89,7 @@ def build_menu_keyboard(extra_rows: list[list[KeyboardButton]] | None = None) ->
     # the other instead of the two coexisting.
     rows = [
         [KeyboardButton(text=BTN_ADD_STACK), KeyboardButton(text=BTN_CITY), KeyboardButton(text=BTN_WORK_FORMAT)],
+        [KeyboardButton(text=BTN_SALARY)],
         [KeyboardButton(text=BTN_VIEW), KeyboardButton(text=BTN_STOP)],
     ]
     if settings.gemini_enabled:
@@ -462,6 +472,82 @@ async def handle_city_input(message: Message, state: FSMContext) -> None:
             message.bot,
             message.from_user.id,
             "Готово — фильтр по городам убран, присылаю вакансии из всех городов.",
+            reply_markup=keyboard,
+        )
+
+
+@router.message(F.text == BTN_SALARY)
+async def handle_salary_button(message: Message, state: FSMContext) -> None:
+    if message.from_user is None:
+        return
+    await _delete_quietly(message)
+    await state.set_state(SalaryFSM.waiting_input)
+
+    async with async_session() as session:
+        subscriber = await get_or_create_subscriber(
+            session, telegram_user_id=message.from_user.id, username=message.from_user.username
+        )
+        current_min_salary = subscriber.min_salary
+
+    if current_min_salary:
+        text = (
+            f"Сейчас фильтр: зарплата от {current_min_salary:,} ₽.\n".replace(",", " ")
+            + "Напиши новую минимальную зарплату в рублях (например: 150000), или «-», чтобы убрать фильтр."
+        )
+    else:
+        text = (
+            "Фильтр по зарплате не задан.\n"
+            "Напиши минимальную желаемую зарплату в рублях (например: 150000) — вакансии без указанной "
+            "зарплаты или в другой валюте всё равно будут приходить, так как сравнить их не с чем."
+        )
+    await send_system_message(
+        message.bot, message.from_user.id, text, reply_markup=await current_menu_keyboard(message.from_user.id)
+    )
+
+
+@router.message(SalaryFSM.waiting_input, F.text.not_in(MENU_BUTTON_TEXTS))
+async def handle_salary_input(message: Message, state: FSMContext) -> None:
+    if message.from_user is None or not message.text:
+        return
+    await _delete_quietly(message)
+
+    text = message.text.strip()
+    keyboard = await current_menu_keyboard(message.from_user.id)
+
+    if text.lower() in SALARY_CLEAR_WORDS:
+        min_salary = None
+    else:
+        digits = re.sub(r"[^\d]", "", text)
+        if not digits:
+            await send_system_message(
+                message.bot,
+                message.from_user.id,
+                "Не понял — напиши число в рублях (например: 150000), или «-», чтобы убрать фильтр.",
+                reply_markup=keyboard,
+            )
+            return
+        min_salary = int(digits)
+
+    await state.clear()
+
+    async with async_session() as session:
+        subscriber = await get_or_create_subscriber(
+            session, telegram_user_id=message.from_user.id, username=message.from_user.username
+        )
+        await update_subscriber_min_salary(session, subscriber, min_salary)
+
+    if min_salary:
+        await send_system_message(
+            message.bot,
+            message.from_user.id,
+            f"Готово — буду присылать вакансии с зарплатой от {min_salary:,} ₽.".replace(",", " "),
+            reply_markup=keyboard,
+        )
+    else:
+        await send_system_message(
+            message.bot,
+            message.from_user.id,
+            "Готово — фильтр по зарплате убран.",
             reply_markup=keyboard,
         )
 

@@ -1,4 +1,4 @@
-from jobsbot.bot.push import _matches_city, _matches_work_format
+from jobsbot.bot.push import _matches_city, _matches_salary, _matches_work_format
 from jobsbot.storage.models import Vacancy
 
 
@@ -62,6 +62,28 @@ def test_hybrid_without_remote_hint_still_requires_city_match():
 def test_no_work_format_filter_matches_everything():
     vacancy = _vacancy(work_format="на месте работодателя")
     assert _matches_work_format(vacancy, []) is True
+
+
+def test_no_salary_filter_matches_everything():
+    vacancy = _vacancy(salary_min_rub=50000)
+    assert _matches_salary(vacancy, None) is True
+
+
+def test_salary_above_threshold_passes():
+    vacancy = _vacancy(salary_min_rub=200000)
+    assert _matches_salary(vacancy, 150000) is True
+
+
+def test_salary_below_threshold_fails():
+    vacancy = _vacancy(salary_min_rub=50000)
+    assert _matches_salary(vacancy, 150000) is False
+
+
+def test_unknown_salary_passes_filter():
+    # Non-RUB currency, "до Y" with no stated floor, or no salary at all —
+    # unknown shouldn't be treated as "below threshold".
+    vacancy = _vacancy(salary_min_rub=None)
+    assert _matches_salary(vacancy, 150000) is True
 
 
 def test_work_format_matches_selected_category():

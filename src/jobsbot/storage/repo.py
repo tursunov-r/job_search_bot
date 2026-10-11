@@ -6,6 +6,7 @@ from sqlmodel import delete, select, update
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from jobsbot.config import settings
+from jobsbot.processing.salary import parse_salary_min_rub
 from jobsbot.storage.models import (
     AdapterHealth,
     AdCampaign,
@@ -354,6 +355,14 @@ async def update_subscriber_cities(session: AsyncSession, subscriber: Subscriber
     return subscriber
 
 
+async def update_subscriber_min_salary(session: AsyncSession, subscriber: Subscriber, min_salary: int | None) -> Subscriber:
+    subscriber.min_salary = min_salary
+    session.add(subscriber)
+    await session.commit()
+    await session.refresh(subscriber)
+    return subscriber
+
+
 async def update_subscriber_work_formats(
     session: AsyncSession, subscriber: Subscriber, work_formats: list[str]
 ) -> Subscriber:
@@ -411,6 +420,7 @@ async def update_vacancy_details(
         vacancy.work_format = work_format
     if salary_text:
         vacancy.salary_text = salary_text
+        vacancy.salary_min_rub = parse_salary_min_rub(salary_text)
     if posted_at:
         vacancy.posted_at = posted_at
     vacancy.details_checked = True

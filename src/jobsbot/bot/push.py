@@ -96,12 +96,23 @@ def _matches_work_format(vacancy: Vacancy, selected_formats: list[str]) -> bool:
     return bool(categorize_work_format(vacancy.work_format) & set(selected_formats))
 
 
+def _matches_salary(vacancy: Vacancy, min_salary: int | None) -> bool:
+    if not min_salary:
+        return True
+    if vacancy.salary_min_rub is None:
+        # Non-RUB currency, no stated floor ("до Y"), or no salary at all —
+        # unknown, not "below threshold", so don't exclude it.
+        return True
+    return vacancy.salary_min_rub >= min_salary
+
+
 def _vacancy_matches(
     vacancy: Vacancy,
     selected_languages: list[str],
     selected_skills: list[str],
     cities: list[str] | None = None,
     work_formats: list[str] | None = None,
+    min_salary: int | None = None,
 ) -> bool:
     vacancy_languages = _json_list(vacancy.languages)
     language_ok = not selected_languages or any(lang in selected_languages for lang in vacancy_languages)
@@ -111,6 +122,7 @@ def _vacancy_matches(
         and stack_ok
         and _matches_city(vacancy, cities or [])
         and _matches_work_format(vacancy, work_formats or [])
+        and _matches_salary(vacancy, min_salary)
     )
 
 
@@ -181,7 +193,12 @@ async def push_new_vacancies(bot: Bot) -> None:
                     continue
 
                 if not _vacancy_matches(
-                    vacancy, selected_languages, selected_skills, selected_cities, selected_work_formats
+                    vacancy,
+                    selected_languages,
+                    selected_skills,
+                    selected_cities,
+                    selected_work_formats,
+                    subscriber.min_salary,
                 ):
                     # Skipped on purpose (doesn't match the subscriber's filters) —
                     # still advance the cursor so it isn't re-checked every cycle.
@@ -224,7 +241,12 @@ async def resend_matching_backlog(bot: Bot, subscriber: Subscriber) -> int:
         sent = 0
         for vacancy in candidates:
             if not _vacancy_matches(
-                vacancy, selected_languages, selected_skills, selected_cities, selected_work_formats
+                vacancy,
+                selected_languages,
+                selected_skills,
+                selected_cities,
+                selected_work_formats,
+                subscriber.min_salary,
             ):
                 continue
             try:
