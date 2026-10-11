@@ -31,6 +31,7 @@ from jobsbot.storage.repo import (
     update_subscriber_keywords,
     update_subscriber_languages,
     update_subscriber_min_salary,
+    update_subscriber_quiet_hours,
     update_subscriber_skills,
     update_subscriber_work_formats,
 )
@@ -43,6 +44,7 @@ BTN_CITY = "🏙 Города"
 BTN_WORK_FORMAT = "🧭 Формат работы"
 BTN_SALARY = "💰 Зарплата от"
 BTN_KEYWORDS = "🔍 Поиск по слову"
+BTN_QUIET_HOURS = "🌙 Тихие часы"
 BTN_INTERVIEW_PREP = "🎯 Подготовка к интервью"
 BTN_RESUME_IMPROVE = "✨ Улучшить резюме"
 BTN_VIEW = "👀 Смотреть вакансии"
@@ -55,6 +57,7 @@ WORK_FORMAT_CALLBACK_PREFIX = "workformat"
 CITY_CLEAR_WORDS = {"-", "везде", "все", "всё"}
 SALARY_CLEAR_WORDS = {"-", "любая", "все", "всё"}
 KEYWORDS_CLEAR_WORDS = {"-", "нет", "убрать"}
+QUIET_HOURS_CLEAR_WORDS = {"-", "нет", "убрать"}
 
 # Used to keep other menu buttons from being swallowed as free-text input
 # by whichever FSM state happens to be waiting (city, report comment, etc.)
@@ -64,6 +67,7 @@ MENU_BUTTON_TEXTS = {
     BTN_WORK_FORMAT,
     BTN_SALARY,
     BTN_KEYWORDS,
+    BTN_QUIET_HOURS,
     BTN_INTERVIEW_PREP,
     BTN_RESUME_IMPROVE,
     BTN_VIEW,
@@ -92,6 +96,10 @@ class KeywordsFSM(StatesGroup):
     waiting_input = State()
 
 
+class QuietHoursFSM(StatesGroup):
+    waiting_input = State()
+
+
 def build_menu_keyboard(extra_rows: list[list[KeyboardButton]] | None = None) -> ReplyKeyboardMarkup:
     # Telegram only ever shows one reply keyboard at a time, so staff/admin
     # rows (if any) get appended here rather than sent as a separate
@@ -99,7 +107,7 @@ def build_menu_keyboard(extra_rows: list[list[KeyboardButton]] | None = None) ->
     # the other instead of the two coexisting.
     rows = [
         [KeyboardButton(text=BTN_ADD_STACK), KeyboardButton(text=BTN_CITY), KeyboardButton(text=BTN_WORK_FORMAT)],
-        [KeyboardButton(text=BTN_SALARY), KeyboardButton(text=BTN_KEYWORDS)],
+        [KeyboardButton(text=BTN_SALARY), KeyboardButton(text=BTN_KEYWORDS), KeyboardButton(text=BTN_QUIET_HOURS)],
         [KeyboardButton(text=BTN_VIEW), KeyboardButton(text=BTN_FAVORITES), KeyboardButton(text=BTN_STOP)],
     ]
     if settings.gemini_enabled:
@@ -627,6 +635,90 @@ async def handle_keywords_input(message: Message, state: FSMContext) -> None:
             message.from_user.id,
             "Готово — доп. поиск по словам убран.",
             reply_markup=keyboard,
+        )
+
+
+def _parse_quiet_hours(text: str) -> tuple[int, int] | None:
+    numbers = re.findall(r"\d{1,2}", text)
+    if len(numbers) < 2:
+        return None
+    start, end = int(numbers[0]), int(numbers[1])
+    if not (0 <= start <= 23 and 0 <= end <= 23):
+        return None
+    return start, end
+
+
+@router.message(F.text == BTN_QUIET_HOURS)
+async def handle_quiet_hours_button(message: Message, state: FSMContext) -> None:
+    if message.from_user is None:
+        return
+    await _delete_quietly(message)
+    await state.set_state(QuietHoursFSM.waiting_input)
+
+    async with async_session() as session:
+        subscriber = await get_or_create_subscriber(
+            session, telegram_user_id=message.from_user.id, username=message.from_user.username
+        )
+        start, end = subscriber.quiet_hours_start, subscriber.quiet_hours_end
+
+    if start is not None and end is not None:
+        text = (
+            f"Сейчас тихие часы: с {start:02d}:00 до {end:02d}:00 — вакансии в это время не присылаю, "
+            "а присылаю всё подряд как только закончится.\n"
+            "Напиши новый диапазон (например: 23-08), или «-», чтобы убрать."
+        )
+    else:
+        text = (
+            "Тихие часы не заданы — вакансии приходят в любое время.\n"
+            "Напиши диапазон часов, когда не нужно присылать (например: 23-08 — "
+            "с 23:00 до 08:00). Всё, что накопится, придёт сразу, как только диапазон закончится."
+        )
+    await send_system_message(
+        message.bot, message.from_user.id, text, reply_markup=await current_menu_keyboard(message.from_user.id)
+    )
+
+
+@router.message(QuietHoursFSM.waiting_input, F.text.not_in(MENU_BUTTON_TEXTS))
+async def handle_quiet_hours_input(message: Message, state: FSMContext) -> None:
+    if message.from_user is None or not message.text:
+        return
+    await _delete_quietly(message)
+
+    text = message.text.strip()
+    keyboard = await current_menu_keyboard(message.from_user.id)
+
+    if text.lower() in QUIET_HOURS_CLEAR_WORDS:
+        start = end = None
+    else:
+        parsed = _parse_quiet_hours(text)
+        if parsed is None:
+            await send_system_message(
+                message.bot,
+                message.from_user.id,
+                "Не понял — напиши два часа через дефис (например: 23-08), или «-», чтобы убрать.",
+                reply_markup=keyboard,
+            )
+            return
+        start, end = parsed
+
+    await state.clear()
+
+    async with async_session() as session:
+        subscriber = await get_or_create_subscriber(
+            session, telegram_user_id=message.from_user.id, username=message.from_user.username
+        )
+        await update_subscriber_quiet_hours(session, subscriber, start, end)
+
+    if start is not None:
+        await send_system_message(
+            message.bot,
+            message.from_user.id,
+            f"Готово — тихие часы с {start:02d}:00 до {end:02d}:00.",
+            reply_markup=keyboard,
+        )
+    else:
+        await send_system_message(
+            message.bot, message.from_user.id, "Готово — тихие часы убраны.", reply_markup=keyboard
         )
 
 

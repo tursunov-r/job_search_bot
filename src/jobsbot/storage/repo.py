@@ -406,6 +406,17 @@ async def update_subscriber_cities(session: AsyncSession, subscriber: Subscriber
     return subscriber
 
 
+async def update_subscriber_quiet_hours(
+    session: AsyncSession, subscriber: Subscriber, start: int | None, end: int | None
+) -> Subscriber:
+    subscriber.quiet_hours_start = start
+    subscriber.quiet_hours_end = end
+    session.add(subscriber)
+    await session.commit()
+    await session.refresh(subscriber)
+    return subscriber
+
+
 async def update_subscriber_keywords(session: AsyncSession, subscriber: Subscriber, keywords: list[str]) -> Subscriber:
     subscriber.keywords = json.dumps(keywords)
     session.add(subscriber)

@@ -2,11 +2,13 @@ import html as html_lib
 import json
 import logging
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from jobsbot.config import settings
 from jobsbot.processing.stack_tags import matches_stack
 from jobsbot.processing.work_formats import categorize as categorize_work_format
 from jobsbot.storage.db import async_session
@@ -189,10 +191,28 @@ async def _deliver_vacancy(bot: Bot, telegram_user_id: int, vacancy: Vacancy) ->
     )
 
 
+def _is_quiet_now(subscriber: Subscriber) -> bool:
+    if subscriber.quiet_hours_start is None or subscriber.quiet_hours_end is None:
+        return False
+    hour = datetime.now(ZoneInfo(settings.bot_timezone)).hour
+    start, end = subscriber.quiet_hours_start, subscriber.quiet_hours_end
+    if start < end:
+        return start <= hour < end
+    if start > end:
+        # Wraps past midnight, e.g. 23 -> 8.
+        return hour >= start or hour < end
+    return False  # start == end — degenerate, treat as "no quiet hours"
+
+
 async def push_new_vacancies(bot: Bot) -> None:
     async with async_session() as session:
         subscribers = await get_active_subscribers(session)
         for subscriber in subscribers:
+            if _is_quiet_now(subscriber):
+                # Cursor untouched on purpose — everything queued delivers
+                # normally, in the usual stream, once the window ends.
+                continue
+
             vacancies = await get_pending_vacancies_for_subscriber(session, subscriber)
             if not vacancies:
                 continue
@@ -334,6 +354,9 @@ async def send_weekly_digest(bot: Bot) -> None:
         subscribers = await get_broadcastable_subscribers(session)
 
     for subscriber in subscribers:
+        if _is_quiet_now(subscriber):
+            continue
+
         async with async_session() as session:
             if subscriber.status == "active":
                 count = await count_deliveries_since(session, subscriber.id, cutoff)

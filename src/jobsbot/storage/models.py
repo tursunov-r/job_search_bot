@@ -104,6 +104,14 @@ class Subscriber(SQLModel, table=True):
     # selected languages/stack tags at all (see push.py::_matches_keywords).
     # [] = no widening, normal language/stack matching only.
     keywords: str = Field(default="[]")
+    # Hour-of-day (0-23, settings.bot_timezone) the subscriber doesn't want
+    # pushed vacancies — e.g. start=23, end=8 means "quiet 23:00-08:00",
+    # wrapping past midnight. Both None = no quiet hours (default). Nothing
+    # is lost during the quiet window: push_new_vacancies just skips this
+    # subscriber's cursor advance for that cycle, so everything queued
+    # delivers normally once it ends (see push.py::_is_quiet_now).
+    quiet_hours_start: int | None = None
+    quiet_hours_end: int | None = None
 
 
 class VacancyDelivery(SQLModel, table=True):

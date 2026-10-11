@@ -1,4 +1,9 @@
+from datetime import datetime
+from unittest.mock import patch
+
+import jobsbot.bot.push as push_module
 from jobsbot.bot.push import (
+    _is_quiet_now,
     _matches_city,
     _matches_keywords,
     _matches_salary,
@@ -179,3 +184,37 @@ def test_work_format_vacancy_with_multiple_categories():
 def test_work_format_unknown_fails_when_filter_set():
     vacancy = _vacancy(work_format=None)
     assert _matches_work_format(vacancy, ["remote"]) is False
+
+
+def _at_hour(hour: int):
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 1, 1, hour, tzinfo=tz)
+
+    return patch.object(push_module, "datetime", FixedDatetime)
+
+
+def test_no_quiet_hours_configured_never_quiet():
+    subscriber = _subscriber(quiet_hours_start=None, quiet_hours_end=None)
+    assert _is_quiet_now(subscriber) is False
+
+
+def test_quiet_hours_wrap_past_midnight():
+    subscriber = _subscriber(quiet_hours_start=23, quiet_hours_end=8)
+    with _at_hour(2):
+        assert _is_quiet_now(subscriber) is True
+    with _at_hour(12):
+        assert _is_quiet_now(subscriber) is False
+    with _at_hour(23):
+        assert _is_quiet_now(subscriber) is True  # start boundary, inclusive
+    with _at_hour(8):
+        assert _is_quiet_now(subscriber) is False  # end boundary, exclusive
+
+
+def test_quiet_hours_same_day_range():
+    subscriber = _subscriber(quiet_hours_start=1, quiet_hours_end=6)
+    with _at_hour(3):
+        assert _is_quiet_now(subscriber) is True
+    with _at_hour(10):
+        assert _is_quiet_now(subscriber) is False

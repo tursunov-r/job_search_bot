@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     weekly_digest_day_of_week: str = "mon"
     weekly_digest_hour: int = 10
 
+    # Single reference timezone all subscribers' "🌙 Тихие часы" are
+    # interpreted in — not per-subscriber (that would need a timezone
+    # picker, a much bigger feature), just the primary market's zone.
+    bot_timezone: str = "Asia/Almaty"
+
     vacancy_retention_days: int = 14
     vacancy_cleanup_interval_seconds: int = 86400
 
