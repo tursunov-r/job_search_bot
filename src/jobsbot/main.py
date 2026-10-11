@@ -74,6 +74,7 @@ async def poll_hh() -> None:
                     schedule=details.schedule if details else None,
                     work_format=details.work_format if details else None,
                     salary_text=details.salary_text if details else None,
+                    posted_at=details.posted_at if details else None,
                 )
             if i < len(all_new_vacancies) - 1:
                 await asyncio.sleep(hh_adapter.DETAIL_FETCH_DELAY_SECONDS)
@@ -125,6 +126,7 @@ async def poll_habr() -> None:
                     session,
                     vacancy.id,
                     description=details.description if details else None,
+                    posted_at=details.posted_at if details else None,
                 )
             if i < len(all_new_vacancies) - 1:
                 await asyncio.sleep(habr_adapter.DETAIL_FETCH_DELAY_SECONDS)

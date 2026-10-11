@@ -20,7 +20,9 @@ format) that aren't present on the listing page at all.
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -113,6 +115,7 @@ class VacancyDetails:
     schedule: str | None = None
     work_format: str | None = None
     salary_text: str | None = None
+    posted_at: datetime | None = None
 
 
 def _text_or_none(tree: LexborHTMLParser, selector: str) -> str | None:
@@ -121,6 +124,33 @@ def _text_or_none(tree: LexborHTMLParser, selector: str) -> str | None:
         return None
     text = _normalize_whitespace(node.text(separator=" "))
     return text or None
+
+
+_MONTHS_RU = {
+    "января": 1, "февраля": 2, "марта": 3, "апреля": 4, "мая": 5, "июня": 6,
+    "июля": 7, "августа": 8, "сентября": 9, "октября": 10, "ноября": 11, "декабря": 12,
+}
+
+# No data-qa hook for this — it's a plain text block ("Вакансия опубликована
+# 9 октября 2026 в Москве") rather than a structured field, so this parses
+# the surrounding text directly instead of relying on a (hashed, unstable)
+# CSS class.
+_PUBLISHED_RE = re.compile(r"Вакансия опубликована\s*(?:<[^>]+>)?\s*(\d{1,2})\s+([а-яё]+)\s*(\d{4})?", re.IGNORECASE)
+
+
+def _parse_posted_at(html: str) -> datetime | None:
+    match = _PUBLISHED_RE.search(html)
+    if not match:
+        return None
+    day, month_name, year = match.groups()
+    month = _MONTHS_RU.get(month_name.lower())
+    if month is None:
+        return None
+    year = int(year) if year else datetime.now(timezone.utc).year
+    try:
+        return datetime(year, month, int(day), tzinfo=timezone.utc)
+    except ValueError:
+        return None
 
 
 def _parse_vacancy_details(html: str) -> VacancyDetails:
@@ -148,6 +178,7 @@ def _parse_vacancy_details(html: str) -> VacancyDetails:
         # Fallback for listing cards without a salary — the detail page has
         # its own stable selector, unlike the listing's data-tag walk-up.
         salary_text=_text_or_none(tree, '[data-qa="vacancy-salary"]'),
+        posted_at=_parse_posted_at(html),
     )
 
 

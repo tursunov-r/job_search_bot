@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from jobsbot.ingestion.habr_adapter import _parse_page, _parse_vacancy_details
 
 CARD_WITH_REAL_SALARY = """
@@ -29,6 +31,7 @@ CARD_WITH_PREDICTED_SALARY = """
 DETAIL_HTML = """
 <html><body>
 <div class="vacancy-description__text"><p>Нужен опытный разработчик для нашей команды.</p></div>
+<time class="basic-date" datetime="2026-10-06T10:23:57+03:00">6 октября</time>
 </body></html>
 """
 
@@ -61,6 +64,12 @@ def test_parse_vacancy_details_extracts_description():
     assert details.description == "Нужен опытный разработчик для нашей команды."
 
 
+def test_parse_vacancy_details_extracts_posted_at():
+    details = _parse_vacancy_details(DETAIL_HTML)
+    assert details.posted_at == datetime.fromisoformat("2026-10-06T10:23:57+03:00")
+
+
 def test_parse_vacancy_details_missing_description_is_none():
     details = _parse_vacancy_details("<html><body>ничего нет</body></html>")
     assert details.description is None
+    assert details.posted_at is None

@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     vacancy_push_interval_seconds: int = 180
     ad_broadcast_check_interval_seconds: int = 1800
 
+    # A vacancy whose *real* publish date (parsed from the source site) is
+    # already older than this by the time our scraper first discovers it
+    # is held back from delivery — see repo.py::_freshness_clause().
+    vacancy_freshness_days: int = 3
+
     vacancy_retention_days: int = 14
     vacancy_cleanup_interval_seconds: int = 86400
 

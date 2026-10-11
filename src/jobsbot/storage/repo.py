@@ -5,6 +5,7 @@ from sqlalchemy import func, or_
 from sqlmodel import delete, select, update
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from jobsbot.config import settings
 from jobsbot.storage.models import (
     AdCampaign,
     AdImpression,
@@ -214,6 +215,18 @@ def _details_ready_clause():
     return (Vacancy.details_checked == True) | (Vacancy.first_seen_at < stale_cutoff)  # noqa: E712
 
 
+def _freshness_clause():
+    """Excludes postings whose *real* publish date (from the source site,
+    not when our scraper happened to find them) is already stale by the
+    time we discovered them — HH's search result ordering isn't strictly
+    by date, so a posting from several days ago can surface on a page we
+    poll only now and get treated as "new". NULL posted_at (sources that
+    don't expose one, or a parse miss) passes through unfiltered rather
+    than being held back."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=settings.vacancy_freshness_days)
+    return (Vacancy.posted_at == None) | (Vacancy.posted_at >= cutoff)  # noqa: E711
+
+
 async def get_pending_vacancies_for_subscriber(
     session: AsyncSession, subscriber: Subscriber, limit: int = 20
 ) -> list[Vacancy]:
@@ -225,6 +238,7 @@ async def get_pending_vacancies_for_subscriber(
             Vacancy.is_python_relevant == True,  # noqa: E712
             Vacancy.hidden == False,  # noqa: E712
             _details_ready_clause(),
+            _freshness_clause(),
         )
         .order_by(Vacancy.id)
         .limit(limit)
@@ -275,6 +289,7 @@ async def get_undelivered_recent_vacancies(
             Vacancy.id.not_in(delivered_subquery),
             Vacancy.hidden == False,  # noqa: E712
             _details_ready_clause(),
+            _freshness_clause(),
         )
         .order_by(Vacancy.id)
         .limit(limit)
@@ -343,6 +358,7 @@ async def update_vacancy_details(
     schedule: str | None = None,
     work_format: str | None = None,
     salary_text: str | None = None,
+    posted_at: datetime | None = None,
 ) -> None:
     """Always marks the vacancy's detail-enrichment pass as done (even if
     every field here is None, e.g. the detail-page fetch failed) — otherwise
@@ -364,6 +380,8 @@ async def update_vacancy_details(
         vacancy.work_format = work_format
     if salary_text:
         vacancy.salary_text = salary_text
+    if posted_at:
+        vacancy.posted_at = posted_at
     vacancy.details_checked = True
     session.add(vacancy)
     await session.commit()
@@ -656,6 +674,7 @@ async def get_vacancies_pending_group_post(
             Vacancy.id.not_in(posted_subquery),
             language_match,
             _details_ready_clause(),
+            _freshness_clause(),
         )
         .order_by(Vacancy.id)
         .limit(limit)

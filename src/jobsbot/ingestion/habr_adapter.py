@@ -21,6 +21,7 @@ page) — left None, same as LinkedIn.
 import asyncio
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -123,14 +124,29 @@ def _parse_page(html: str) -> list[RawVacancy]:
 @dataclass
 class HabrVacancyDetails:
     description: str | None = None
+    posted_at: datetime | None = None
+
+
+def _parse_posted_at(tree: LexborHTMLParser) -> datetime | None:
+    # Habr renders the real publish timestamp in a plain ISO datetime
+    # attribute — no SEO text-parsing needed, unlike HH.
+    node = tree.css_first("time.basic-date")
+    if node is None:
+        return None
+    raw = node.attributes.get("datetime")
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        return None
 
 
 def _parse_vacancy_details(html: str) -> HabrVacancyDetails:
     tree = LexborHTMLParser(html)
     node = tree.css_first(".vacancy-description__text")
-    if node is None:
-        return HabrVacancyDetails()
-    return HabrVacancyDetails(description=_clean_text(node.text(separator=" ")))
+    description = _clean_text(node.text(separator=" ")) if node else None
+    return HabrVacancyDetails(description=description, posted_at=_parse_posted_at(tree))
 
 
 async def fetch_vacancy_details(client: httpx.AsyncClient, url: str) -> HabrVacancyDetails | None:

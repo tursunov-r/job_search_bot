@@ -1,4 +1,6 @@
-from jobsbot.ingestion.hh_adapter import _parse_page, _parse_vacancy_details
+from datetime import datetime, timezone
+
+from jobsbot.ingestion.hh_adapter import _parse_page, _parse_posted_at, _parse_vacancy_details
 
 LISTING_HTML_WITH_SALARY = """
 <article data-qa="vacancy-serp__vacancy">
@@ -58,4 +60,27 @@ def test_parse_vacancy_details_missing_fields_are_none():
     assert details.employment_type is None
     assert details.schedule is None
     assert details.work_format is None
-    assert details.description is None
+    assert details.posted_at is None
+
+
+def test_parse_posted_at_with_year():
+    html = "<div>Вакансия опубликована <span>9 октября 2026</span> в Москве</div>"
+    assert _parse_posted_at(html) == datetime(2026, 10, 9, tzinfo=timezone.utc)
+
+
+def test_parse_posted_at_without_year_defaults_to_current_year():
+    html = "<div>Вакансия опубликована <span>9 октября</span></div>"
+    assert _parse_posted_at(html) == datetime(datetime.now(timezone.utc).year, 10, 9, tzinfo=timezone.utc)
+
+
+def test_parse_posted_at_missing_returns_none():
+    assert _parse_posted_at("<html><body>ничего нет</body></html>") is None
+
+
+def test_parse_vacancy_details_extracts_posted_at():
+    html = DETAIL_HTML.replace(
+        "<p>Опыт работы:",
+        "<p>Вакансия опубликована <span>7 октября 2026</span> в Москве</p><p>Опыт работы:",
+    )
+    details = _parse_vacancy_details(html)
+    assert details.posted_at == datetime(2026, 10, 7, tzinfo=timezone.utc)
