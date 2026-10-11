@@ -14,19 +14,49 @@ from jobsbot.ingestion.telegram_poller import TelegramChannelPoller
 from jobsbot.processing.languages import LANGUAGES
 from jobsbot.processing.pipeline import ingest
 from jobsbot.storage.db import async_session, init_db
-from jobsbot.storage.repo import cleanup_old_vacancies, get_or_create_source, update_vacancy_details
+from jobsbot.storage.repo import (
+    cleanup_old_vacancies,
+    get_or_create_source,
+    record_adapter_poll_result,
+    update_vacancy_details,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-async def poll_hh_language(language_key: str) -> list:
+async def _check_adapter_health(bot, adapter: str, label: str, raw_count: int) -> None:
+    async with async_session() as session:
+        should_alert, recovered = await record_adapter_poll_result(session, adapter, raw_count)
+
+    if bot is None:
+        # e.g. reset_vacancies.py, which has no live bot/chat to notify —
+        # still worth recording the poll result above, just nothing to send.
+        return
+
+    if should_alert:
+        text = (
+            f"⚠️ {label}: {settings.adapter_failure_threshold} цикла подряд без единой вакансии в выдаче. "
+            f"Возможно, сайт поменял вёрстку и парсер сломался, либо источник недоступен — стоит проверить."
+        )
+    elif recovered:
+        text = f"✅ {label}: вакансии снова находятся, всё восстановилось."
+    else:
+        return
+
+    try:
+        await bot.send_message(settings.super_admin_telegram_user_id, text)
+    except Exception:
+        logger.exception("Failed to notify super admin about %s adapter health", adapter)
+
+
+async def poll_hh_language(language_key: str) -> tuple[int, list]:
     lang = LANGUAGES[language_key]
     try:
         raw_vacancies = await hh_adapter.fetch_vacancies(lang.hh_search_term)
     except Exception:
         logger.exception("HH polling failed for language %s", language_key)
-        return []
+        return 0, []
 
     new_vacancies = []
     async with async_session() as session:
@@ -40,16 +70,21 @@ async def poll_hh_language(language_key: str) -> list:
     logger.info(
         "HH poll [%s]: fetched %d, inserted %d new", language_key, len(raw_vacancies), len(new_vacancies)
     )
-    return new_vacancies
+    return len(raw_vacancies), new_vacancies
 
 
-async def poll_hh() -> None:
+async def poll_hh(bot=None) -> None:
     all_new_vacancies = []
+    total_raw = 0
     language_keys = list(LANGUAGES.keys())
     for i, language_key in enumerate(language_keys):
-        all_new_vacancies.extend(await poll_hh_language(language_key))
+        raw_count, new_vacancies = await poll_hh_language(language_key)
+        total_raw += raw_count
+        all_new_vacancies.extend(new_vacancies)
         if i < len(language_keys) - 1:
             await asyncio.sleep(hh_adapter.PAGE_DELAY_SECONDS)
+
+    await _check_adapter_health(bot, "hh", "HH.ru", total_raw)
 
     if not all_new_vacancies:
         return
@@ -80,13 +115,13 @@ async def poll_hh() -> None:
                 await asyncio.sleep(hh_adapter.DETAIL_FETCH_DELAY_SECONDS)
 
 
-async def poll_habr_language(language_key: str) -> list:
+async def poll_habr_language(language_key: str) -> tuple[int, list]:
     lang = LANGUAGES[language_key]
     try:
         raw_vacancies = await habr_adapter.fetch_vacancies(lang.hh_search_term)
     except Exception:
         logger.exception("Habr polling failed for language %s", language_key)
-        return []
+        return 0, []
 
     new_vacancies = []
     async with async_session() as session:
@@ -100,16 +135,21 @@ async def poll_habr_language(language_key: str) -> list:
     logger.info(
         "Habr poll [%s]: fetched %d, inserted %d new", language_key, len(raw_vacancies), len(new_vacancies)
     )
-    return new_vacancies
+    return len(raw_vacancies), new_vacancies
 
 
-async def poll_habr() -> None:
+async def poll_habr(bot=None) -> None:
     all_new_vacancies = []
+    total_raw = 0
     language_keys = list(LANGUAGES.keys())
     for i, language_key in enumerate(language_keys):
-        all_new_vacancies.extend(await poll_habr_language(language_key))
+        raw_count, new_vacancies = await poll_habr_language(language_key)
+        total_raw += raw_count
+        all_new_vacancies.extend(new_vacancies)
         if i < len(language_keys) - 1:
             await asyncio.sleep(habr_adapter.PAGE_DELAY_SECONDS)
+
+    await _check_adapter_health(bot, "habr", "Habr Career", total_raw)
 
     if not all_new_vacancies:
         return
@@ -132,7 +172,7 @@ async def poll_habr() -> None:
                 await asyncio.sleep(habr_adapter.DETAIL_FETCH_DELAY_SECONDS)
 
 
-async def poll_geekjob() -> None:
+async def poll_geekjob(bot=None) -> None:
     # No search-term loop here, unlike HH/Habr — geekjob's keyword search is
     # client-side only (see geekjob_adapter docstring), so this is a single
     # mixed-topic feed, relevance decided by detect_languages() inside
@@ -141,6 +181,7 @@ async def poll_geekjob() -> None:
         raw_vacancies = await geekjob_adapter.fetch_vacancies()
     except Exception:
         logger.exception("Geekjob polling failed")
+        await _check_adapter_health(bot, "geekjob", "Geekjob.ru", 0)
         return
 
     new_vacancies = []
@@ -151,6 +192,8 @@ async def poll_geekjob() -> None:
             if vacancy:
                 new_vacancies.append(vacancy)
     logger.info("Geekjob poll: fetched %d, inserted %d new", len(raw_vacancies), len(new_vacancies))
+
+    await _check_adapter_health(bot, "geekjob", "Geekjob.ru", len(raw_vacancies))
 
     if not new_vacancies:
         return
@@ -212,9 +255,9 @@ async def main() -> None:
         logger.warning("TELEGRAM_API_ID/TELEGRAM_API_HASH not set — Telegram channel parsing disabled")
 
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(poll_hh, "interval", seconds=settings.hh_poll_interval_seconds)
-    scheduler.add_job(poll_habr, "interval", seconds=settings.habr_poll_interval_seconds)
-    scheduler.add_job(poll_geekjob, "interval", seconds=settings.geekjob_poll_interval_seconds)
+    scheduler.add_job(poll_hh, "interval", seconds=settings.hh_poll_interval_seconds, args=[bot])
+    scheduler.add_job(poll_habr, "interval", seconds=settings.habr_poll_interval_seconds, args=[bot])
+    scheduler.add_job(poll_geekjob, "interval", seconds=settings.geekjob_poll_interval_seconds, args=[bot])
     if settings.linkedin_enabled:
         scheduler.add_job(poll_linkedin, "interval", seconds=settings.linkedin_poll_interval_seconds)
     if telegram_poller is not None:
@@ -255,9 +298,9 @@ async def main() -> None:
         background_tasks.add(task)
         task.add_done_callback(background_tasks.discard)
 
-    _track(asyncio.create_task(poll_hh()))
-    _track(asyncio.create_task(poll_habr()))
-    _track(asyncio.create_task(poll_geekjob()))
+    _track(asyncio.create_task(poll_hh(bot)))
+    _track(asyncio.create_task(poll_habr(bot)))
+    _track(asyncio.create_task(poll_geekjob(bot)))
     if settings.linkedin_enabled:
         _track(asyncio.create_task(poll_linkedin()))
     if telegram_poller is not None:

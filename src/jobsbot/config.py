@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     # is held back from delivery — see repo.py::_freshness_clause().
     vacancy_freshness_days: int = 3
 
+    # Consecutive polling cycles with zero raw results (not zero *new*
+    # vacancies — that's normal) before alerting the super admin that a
+    # scraper adapter might be broken. See storage.models.AdapterHealth.
+    adapter_failure_threshold: int = 3
+
     vacancy_retention_days: int = 14
     vacancy_cleanup_interval_seconds: int = 86400
 

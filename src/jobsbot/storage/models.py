@@ -161,6 +161,23 @@ class AdImpression(SQLModel, table=True):
     delivery_status: str = "sent"  # 'sent','failed','blocked'
 
 
+class AdapterHealth(SQLModel, table=True):
+    """Tracks consecutive polling cycles where a scraper adapter (hh, habr,
+    geekjob) came back with zero raw results across its entire cycle — a
+    much stronger "something broke" signal than zero *new* vacancies
+    (which is normal once the backlog is caught up). Persisted (not
+    in-memory) so an alert streak survives a redeploy, which happens often
+    in this project. alert_sent gates sending the warning exactly once per
+    outage, and the recovery message exactly once when it clears."""
+
+    __tablename__ = "adapter_health"
+
+    adapter: str = Field(primary_key=True)  # 'hh', 'habr', 'geekjob'
+    consecutive_empty_polls: int = Field(default=0)
+    alert_sent: bool = Field(default=False)
+    last_polled_at: datetime | None = None
+
+
 class RequiredChannel(SQLModel, table=True):
     """A channel/group a new subscriber must join before they can use the
     bot — the super admin adds these by @username. The bot must itself be a

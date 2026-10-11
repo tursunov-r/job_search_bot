@@ -7,6 +7,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from jobsbot.config import settings
 from jobsbot.storage.models import (
+    AdapterHealth,
     AdCampaign,
     AdImpression,
     GroupTopic,
@@ -167,6 +168,36 @@ async def get_broadcastable_subscribers(session: AsyncSession) -> list[Subscribe
     a real, reachable user."""
     result = await session.exec(select(Subscriber).where(Subscriber.status != "blocked"))
     return list(result.all())
+
+
+async def record_adapter_poll_result(session: AsyncSession, adapter: str, raw_count: int) -> tuple[bool, bool]:
+    """Returns (should_alert, recovered). should_alert is True exactly once
+    when the empty-streak crosses settings.adapter_failure_threshold;
+    recovered is True exactly once when a streak that had already alerted
+    sees a non-zero result again."""
+    result = await session.exec(select(AdapterHealth).where(AdapterHealth.adapter == adapter))
+    health = result.first()
+    if health is None:
+        health = AdapterHealth(adapter=adapter)
+
+    health.last_polled_at = datetime.now(timezone.utc)
+    should_alert = False
+    recovered = False
+
+    if raw_count > 0:
+        if health.alert_sent:
+            recovered = True
+        health.consecutive_empty_polls = 0
+        health.alert_sent = False
+    else:
+        health.consecutive_empty_polls += 1
+        if health.consecutive_empty_polls >= settings.adapter_failure_threshold and not health.alert_sent:
+            should_alert = True
+            health.alert_sent = True
+
+    session.add(health)
+    await session.commit()
+    return should_alert, recovered
 
 
 async def add_required_channel(session: AsyncSession, username: str, title: str | None = None) -> RequiredChannel:
