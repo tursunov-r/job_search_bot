@@ -9,6 +9,7 @@ from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from jobsbot.config import settings
+from jobsbot.processing.city_timezones import resolve_city_timezone
 from jobsbot.processing.stack_tags import matches_stack
 from jobsbot.processing.work_formats import categorize as categorize_work_format
 from jobsbot.storage.db import async_session
@@ -191,10 +192,20 @@ async def _deliver_vacancy(bot: Bot, telegram_user_id: int, vacancy: Vacancy) ->
     )
 
 
+def _subscriber_timezone(subscriber: Subscriber) -> ZoneInfo:
+    """Telegram's Bot API doesn't expose a client timezone at all, so this
+    infers it from whatever city the subscriber already typed into the
+    "🏙 Города" filter (see processing/city_timezones.py) — no extra
+    prompt needed. Falls back to settings.bot_timezone if no city is set
+    or none is recognized."""
+    tz_name = resolve_city_timezone(_json_list(subscriber.cities)) or settings.bot_timezone
+    return ZoneInfo(tz_name)
+
+
 def _is_quiet_now(subscriber: Subscriber) -> bool:
     if subscriber.quiet_hours_start is None or subscriber.quiet_hours_end is None:
         return False
-    hour = datetime.now(ZoneInfo(settings.bot_timezone)).hour
+    hour = datetime.now(_subscriber_timezone(subscriber)).hour
     start, end = subscriber.quiet_hours_start, subscriber.quiet_hours_end
     if start < end:
         return start <= hour < end

@@ -671,7 +671,8 @@ async def handle_quiet_hours_button(message: Message, state: FSMContext) -> None
         text = (
             "Тихие часы не заданы — вакансии приходят в любое время.\n"
             "Напиши диапазон часов, когда не нужно присылать (например: 23-08 — "
-            "с 23:00 до 08:00). Всё, что накопится, придёт сразу, как только диапазон закончится."
+            "с 23:00 до 08:00). Всё, что накопится, придёт сразу, как только диапазон закончится.\n\n"
+            "Часовой пояс беру из твоего города (если задан в «🏙 Города»), иначе — по умолчанию."
         )
     await send_system_message(
         message.bot, message.from_user.id, text, reply_markup=await current_menu_keyboard(message.from_user.id)
