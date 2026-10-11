@@ -1,6 +1,7 @@
 import html as html_lib
 import json
 import logging
+from datetime import datetime, timedelta, timezone
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
@@ -11,7 +12,9 @@ from jobsbot.processing.work_formats import categorize as categorize_work_format
 from jobsbot.storage.db import async_session
 from jobsbot.storage.models import Subscriber, Vacancy
 from jobsbot.storage.repo import (
+    count_deliveries_since,
     get_active_subscribers,
+    get_broadcastable_subscribers,
     get_delivered_vacancy_ids,
     get_pending_vacancies_for_subscriber,
     get_undelivered_recent_vacancies,
@@ -288,3 +291,71 @@ async def resend_matching_backlog(bot: Bot, subscriber: Subscriber) -> int:
                 continue
 
         return sent
+
+
+def _matching_candidate_count(subscriber: Subscriber, candidates: list[Vacancy]) -> int:
+    selected_languages = _json_list(subscriber.languages)
+    selected_skills = _json_list(subscriber.skills)
+    selected_cities = _json_list(subscriber.cities)
+    selected_work_formats = _json_list(subscriber.work_formats)
+    selected_keywords = _json_list(subscriber.keywords)
+    return sum(
+        1
+        for vacancy in candidates
+        if _vacancy_matches(
+            vacancy,
+            selected_languages,
+            selected_skills,
+            selected_cities,
+            selected_work_formats,
+            subscriber.min_salary,
+            selected_keywords,
+        )
+    )
+
+
+async def send_weekly_digest(bot: Bot) -> None:
+    """A once-a-week touchpoint — a plain background push, not a reply to
+    any menu action, so it deliberately does NOT go through
+    send_system_message (that would risk deleting some other system
+    message the subscriber happens to have open at the time).
+
+    Active subscribers get a simple recap of how much they were actually
+    sent; paused ones get a nudge showing how much *would* have matched
+    their filters this week, to pull dormant accounts back — the main
+    point of this feature. Anyone with a zero count is skipped entirely
+    rather than sent an empty, discouraging digest.
+    """
+    from jobsbot.bot.handlers.subscriber_menu import BTN_VIEW
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+
+    async with async_session() as session:
+        subscribers = await get_broadcastable_subscribers(session)
+
+    for subscriber in subscribers:
+        async with async_session() as session:
+            if subscriber.status == "active":
+                count = await count_deliveries_since(session, subscriber.id, cutoff)
+                if not count:
+                    continue
+                text = f"📊 За последнюю неделю тебе пришло {count} подходящих вакансий."
+            else:
+                candidates = await get_undelivered_recent_vacancies(session, subscriber.id, days=7)
+                count = _matching_candidate_count(subscriber, candidates)
+                if not count:
+                    continue
+                text = (
+                    f"📊 Рассылка на паузе, но за последнюю неделю нашлось {count} вакансий, "
+                    f"подходящих под твои фильтры. Нажми «{BTN_VIEW}», чтобы их получить."
+                )
+
+        try:
+            await bot.send_message(subscriber.telegram_user_id, text)
+        except TelegramForbiddenError:
+            async with async_session() as session:
+                subscriber.status = "blocked"
+                session.add(subscriber)
+                await session.commit()
+        except Exception:
+            logger.exception("Failed to send weekly digest to %s", subscriber.telegram_user_id)

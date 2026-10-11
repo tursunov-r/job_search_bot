@@ -330,6 +330,16 @@ async def record_delivery(session: AsyncSession, subscriber_id: int, vacancy_id:
     await session.commit()
 
 
+async def count_deliveries_since(session: AsyncSession, subscriber_id: int, since: datetime) -> int:
+    """Used by the weekly digest (see push.py::send_weekly_digest)."""
+    result = await session.exec(
+        select(func.count(VacancyDelivery.id)).where(
+            VacancyDelivery.subscriber_id == subscriber_id, VacancyDelivery.delivered_at >= since
+        )
+    )
+    return result.first() or 0
+
+
 async def get_delivered_vacancy_ids(
     session: AsyncSession, subscriber_id: int, vacancy_ids: list[int]
 ) -> set[int]:

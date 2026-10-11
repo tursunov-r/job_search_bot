@@ -7,7 +7,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from jobsbot.ads.scheduler import broadcast_due_campaigns
 from jobsbot.bot.dispatcher import build_bot, build_dispatcher
 from jobsbot.bot.group_broadcast import post_new_vacancies_to_topics
-from jobsbot.bot.push import push_new_vacancies
+from jobsbot.bot.push import push_new_vacancies, send_weekly_digest
 from jobsbot.config import settings
 from jobsbot.ingestion import geekjob_adapter, habr_adapter, hh_adapter, linkedin_adapter
 from jobsbot.ingestion.telegram_poller import TelegramChannelPoller
@@ -284,6 +284,13 @@ async def main() -> None:
     )
     scheduler.add_job(
         cleanup_vacancies, "interval", seconds=settings.vacancy_cleanup_interval_seconds
+    )
+    scheduler.add_job(
+        send_weekly_digest,
+        "cron",
+        day_of_week=settings.weekly_digest_day_of_week,
+        hour=settings.weekly_digest_hour,
+        args=[bot],
     )
     scheduler.start()
 

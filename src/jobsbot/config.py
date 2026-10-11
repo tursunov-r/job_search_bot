@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     # scraper adapter might be broken. See storage.models.AdapterHealth.
     adapter_failure_threshold: int = 3
 
+    # When the weekly digest (push.py::send_weekly_digest) fires — APScheduler
+    # cron fields, server-local time.
+    weekly_digest_day_of_week: str = "mon"
+    weekly_digest_hour: int = 10
+
     vacancy_retention_days: int = 14
     vacancy_cleanup_interval_seconds: int = 86400
 

@@ -1,5 +1,12 @@
-from jobsbot.bot.push import _matches_city, _matches_keywords, _matches_salary, _matches_work_format, _vacancy_matches
-from jobsbot.storage.models import Vacancy
+from jobsbot.bot.push import (
+    _matches_city,
+    _matches_keywords,
+    _matches_salary,
+    _matches_work_format,
+    _matching_candidate_count,
+    _vacancy_matches,
+)
+from jobsbot.storage.models import Subscriber, Vacancy
 
 
 def _vacancy(**overrides) -> Vacancy:
@@ -12,6 +19,19 @@ def _vacancy(**overrides) -> Vacancy:
     )
     defaults.update(overrides)
     return Vacancy(**defaults)
+
+
+def _subscriber(**overrides) -> Subscriber:
+    defaults = dict(
+        telegram_user_id=1,
+        languages="[]",
+        skills="[]",
+        cities="[]",
+        work_formats="[]",
+        keywords="[]",
+    )
+    defaults.update(overrides)
+    return Subscriber(**defaults)
 
 
 def test_no_city_filter_matches_everything():
@@ -119,6 +139,22 @@ def test_keyword_widening_still_respects_other_filters():
         title="Go Developer", description="FastAPI integration", languages='["go"]', location="Новосибирск"
     )
     assert _vacancy_matches(vacancy, ["python"], [], ["Москва"], None, None, ["fastapi"]) is False
+
+
+def test_matching_candidate_count_for_weekly_digest():
+    subscriber = _subscriber(languages='["python"]')
+    candidates = [
+        _vacancy(fingerprint="d1", languages='["python"]'),
+        _vacancy(fingerprint="d2", languages='["go"]'),  # doesn't match -> not counted
+        _vacancy(fingerprint="d3", languages='["python"]'),
+    ]
+    assert _matching_candidate_count(subscriber, candidates) == 2
+
+
+def test_matching_candidate_count_zero_when_nothing_matches():
+    subscriber = _subscriber(languages='["java"]')
+    candidates = [_vacancy(fingerprint="d4", languages='["python"]')]
+    assert _matching_candidate_count(subscriber, candidates) == 0
 
 
 def test_work_format_matches_selected_category():
