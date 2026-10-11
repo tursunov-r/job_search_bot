@@ -106,6 +106,18 @@ def _matches_salary(vacancy: Vacancy, min_salary: int | None) -> bool:
     return vacancy.salary_min_rub >= min_salary
 
 
+def _matches_keywords(vacancy: Vacancy, keywords: list[str]) -> bool:
+    """A free-text keyword match *widens* delivery — it never excludes
+    anything on its own (see _vacancy_matches), only adds vacancies that
+    wouldn't have matched the subscriber's language/stack selection at
+    all, so a framework/tool mentioned in the text can be found even if
+    it's not modeled as its own language or stack tag."""
+    if not keywords:
+        return False
+    text = f"{vacancy.title or ''} {vacancy.description or ''}".lower()
+    return any(keyword.lower() in text for keyword in keywords)
+
+
 def _vacancy_matches(
     vacancy: Vacancy,
     selected_languages: list[str],
@@ -113,13 +125,14 @@ def _vacancy_matches(
     cities: list[str] | None = None,
     work_formats: list[str] | None = None,
     min_salary: int | None = None,
+    keywords: list[str] | None = None,
 ) -> bool:
     vacancy_languages = _json_list(vacancy.languages)
     language_ok = not selected_languages or any(lang in selected_languages for lang in vacancy_languages)
     stack_ok = matches_stack(vacancy.title, vacancy.description, selected_skills)
+    relevance_ok = (language_ok and stack_ok) or _matches_keywords(vacancy, keywords or [])
     return (
-        language_ok
-        and stack_ok
+        relevance_ok
         and _matches_city(vacancy, cities or [])
         and _matches_work_format(vacancy, work_formats or [])
         and _matches_salary(vacancy, min_salary)
@@ -180,6 +193,7 @@ async def push_new_vacancies(bot: Bot) -> None:
             selected_skills = _json_list(subscriber.skills)
             selected_cities = _json_list(subscriber.cities)
             selected_work_formats = _json_list(subscriber.work_formats)
+            selected_keywords = _json_list(subscriber.keywords)
             cursor_id = subscriber.last_vacancy_sent_id
             delivered_ids = await get_delivered_vacancy_ids(
                 session, subscriber.id, [v.id for v in vacancies]
@@ -199,6 +213,7 @@ async def push_new_vacancies(bot: Bot) -> None:
                     selected_cities,
                     selected_work_formats,
                     subscriber.min_salary,
+                    selected_keywords,
                 ):
                     # Skipped on purpose (doesn't match the subscriber's filters) —
                     # still advance the cursor so it isn't re-checked every cycle.
@@ -237,6 +252,7 @@ async def resend_matching_backlog(bot: Bot, subscriber: Subscriber) -> int:
         selected_skills = _json_list(subscriber.skills)
         selected_cities = _json_list(subscriber.cities)
         selected_work_formats = _json_list(subscriber.work_formats)
+        selected_keywords = _json_list(subscriber.keywords)
 
         sent = 0
         for vacancy in candidates:
@@ -247,6 +263,7 @@ async def resend_matching_backlog(bot: Bot, subscriber: Subscriber) -> int:
                 selected_cities,
                 selected_work_formats,
                 subscriber.min_salary,
+                selected_keywords,
             ):
                 continue
             try:

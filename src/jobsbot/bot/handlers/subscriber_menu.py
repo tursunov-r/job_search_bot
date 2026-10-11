@@ -28,6 +28,7 @@ from jobsbot.storage.repo import (
     resume_subscriber_by_telegram_id,
     set_last_bot_message_id,
     update_subscriber_cities,
+    update_subscriber_keywords,
     update_subscriber_languages,
     update_subscriber_min_salary,
     update_subscriber_skills,
@@ -41,6 +42,7 @@ BTN_ADD_STACK = "➕ Добавить стек"
 BTN_CITY = "🏙 Города"
 BTN_WORK_FORMAT = "🧭 Формат работы"
 BTN_SALARY = "💰 Зарплата от"
+BTN_KEYWORDS = "🔍 Поиск по слову"
 BTN_INTERVIEW_PREP = "🎯 Подготовка к интервью"
 BTN_RESUME_IMPROVE = "✨ Улучшить резюме"
 BTN_VIEW = "👀 Смотреть вакансии"
@@ -51,6 +53,7 @@ WORK_FORMAT_CALLBACK_PREFIX = "workformat"
 
 CITY_CLEAR_WORDS = {"-", "везде", "все", "всё"}
 SALARY_CLEAR_WORDS = {"-", "любая", "все", "всё"}
+KEYWORDS_CLEAR_WORDS = {"-", "нет", "убрать"}
 
 # Used to keep other menu buttons from being swallowed as free-text input
 # by whichever FSM state happens to be waiting (city, report comment, etc.)
@@ -59,6 +62,7 @@ MENU_BUTTON_TEXTS = {
     BTN_CITY,
     BTN_WORK_FORMAT,
     BTN_SALARY,
+    BTN_KEYWORDS,
     BTN_INTERVIEW_PREP,
     BTN_RESUME_IMPROVE,
     BTN_VIEW,
@@ -82,6 +86,10 @@ class SalaryFSM(StatesGroup):
     waiting_input = State()
 
 
+class KeywordsFSM(StatesGroup):
+    waiting_input = State()
+
+
 def build_menu_keyboard(extra_rows: list[list[KeyboardButton]] | None = None) -> ReplyKeyboardMarkup:
     # Telegram only ever shows one reply keyboard at a time, so staff/admin
     # rows (if any) get appended here rather than sent as a separate
@@ -89,7 +97,7 @@ def build_menu_keyboard(extra_rows: list[list[KeyboardButton]] | None = None) ->
     # the other instead of the two coexisting.
     rows = [
         [KeyboardButton(text=BTN_ADD_STACK), KeyboardButton(text=BTN_CITY), KeyboardButton(text=BTN_WORK_FORMAT)],
-        [KeyboardButton(text=BTN_SALARY)],
+        [KeyboardButton(text=BTN_SALARY), KeyboardButton(text=BTN_KEYWORDS)],
         [KeyboardButton(text=BTN_VIEW), KeyboardButton(text=BTN_STOP)],
     ]
     if settings.gemini_enabled:
@@ -548,6 +556,74 @@ async def handle_salary_input(message: Message, state: FSMContext) -> None:
             message.bot,
             message.from_user.id,
             "Готово — фильтр по зарплате убран.",
+            reply_markup=keyboard,
+        )
+
+
+@router.message(F.text == BTN_KEYWORDS)
+async def handle_keywords_button(message: Message, state: FSMContext) -> None:
+    if message.from_user is None:
+        return
+    await _delete_quietly(message)
+    await state.set_state(KeywordsFSM.waiting_input)
+
+    async with async_session() as session:
+        subscriber = await get_or_create_subscriber(
+            session, telegram_user_id=message.from_user.id, username=message.from_user.username
+        )
+        current_keywords = _json_list(subscriber.keywords)
+
+    if current_keywords:
+        keywords_label = ", ".join(current_keywords)
+        text = (
+            f"Сейчас доп. поиск по словам: «{keywords_label}».\n"
+            "Напиши новые слова через запятую (например: FastAPI, Airflow), или «-», чтобы убрать."
+        )
+    else:
+        text = (
+            "Доп. поиск по словам не задан.\n"
+            "Напиши одно или несколько слов через запятую (например: FastAPI, Airflow) — буду присылать "
+            "вакансии, где встречается хотя бы одно из них, даже если они не попадают в выбранный "
+            "язык/стек. Остальные фильтры (язык, стек, город, зарплата, формат работы) при этом всё равно применяются."
+        )
+    await send_system_message(
+        message.bot, message.from_user.id, text, reply_markup=await current_menu_keyboard(message.from_user.id)
+    )
+
+
+@router.message(KeywordsFSM.waiting_input, F.text.not_in(MENU_BUTTON_TEXTS))
+async def handle_keywords_input(message: Message, state: FSMContext) -> None:
+    if message.from_user is None or not message.text:
+        return
+    await _delete_quietly(message)
+    await state.clear()
+
+    text = message.text.strip()
+    if text.lower() in KEYWORDS_CLEAR_WORDS:
+        keywords = []
+    else:
+        keywords = [part.strip() for part in text.split(",") if part.strip()]
+
+    async with async_session() as session:
+        subscriber = await get_or_create_subscriber(
+            session, telegram_user_id=message.from_user.id, username=message.from_user.username
+        )
+        await update_subscriber_keywords(session, subscriber, keywords)
+
+    keyboard = await current_menu_keyboard(message.from_user.id)
+    if keywords:
+        keywords_label = ", ".join(keywords)
+        await send_system_message(
+            message.bot,
+            message.from_user.id,
+            f"Готово — дополнительно буду присылать вакансии со словами «{keywords_label}».",
+            reply_markup=keyboard,
+        )
+    else:
+        await send_system_message(
+            message.bot,
+            message.from_user.id,
+            "Готово — доп. поиск по словам убран.",
             reply_markup=keyboard,
         )
 

@@ -98,6 +98,12 @@ class Subscriber(SQLModel, table=True):
     # None for non-RUB postings or ones with no stated floor — those always
     # pass the filter rather than being wrongly excluded.
     min_salary: int | None = None
+    # JSON array of free-text keywords — widens delivery beyond the usual
+    # language/stack match: a vacancy whose title/description contains any
+    # one of these is delivered even if it didn't match the subscriber's
+    # selected languages/stack tags at all (see push.py::_matches_keywords).
+    # [] = no widening, normal language/stack matching only.
+    keywords: str = Field(default="[]")
 
 
 class VacancyDelivery(SQLModel, table=True):

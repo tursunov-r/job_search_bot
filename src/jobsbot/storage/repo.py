@@ -355,6 +355,14 @@ async def update_subscriber_cities(session: AsyncSession, subscriber: Subscriber
     return subscriber
 
 
+async def update_subscriber_keywords(session: AsyncSession, subscriber: Subscriber, keywords: list[str]) -> Subscriber:
+    subscriber.keywords = json.dumps(keywords)
+    session.add(subscriber)
+    await session.commit()
+    await session.refresh(subscriber)
+    return subscriber
+
+
 async def update_subscriber_min_salary(session: AsyncSession, subscriber: Subscriber, min_salary: int | None) -> Subscriber:
     subscriber.min_salary = min_salary
     session.add(subscriber)

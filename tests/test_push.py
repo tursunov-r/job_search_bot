@@ -1,4 +1,4 @@
-from jobsbot.bot.push import _matches_city, _matches_salary, _matches_work_format
+from jobsbot.bot.push import _matches_city, _matches_keywords, _matches_salary, _matches_work_format, _vacancy_matches
 from jobsbot.storage.models import Vacancy
 
 
@@ -84,6 +84,41 @@ def test_unknown_salary_passes_filter():
     # unknown shouldn't be treated as "below threshold".
     vacancy = _vacancy(salary_min_rub=None)
     assert _matches_salary(vacancy, 150000) is True
+
+
+def test_no_keywords_never_matches_on_its_own():
+    vacancy = _vacancy(title="FastAPI service")
+    assert _matches_keywords(vacancy, []) is False
+
+
+def test_keyword_matches_title_case_insensitively():
+    vacancy = _vacancy(title="Разработчик FastAPI", description=None)
+    assert _matches_keywords(vacancy, ["fastapi"]) is True
+
+
+def test_keyword_matches_description():
+    vacancy = _vacancy(title="Backend Developer", description="Работаем с Apache Airflow")
+    assert _matches_keywords(vacancy, ["airflow"]) is True
+
+
+def test_keyword_no_match():
+    vacancy = _vacancy(title="Backend Developer", description="Django, Celery")
+    assert _matches_keywords(vacancy, ["fastapi"]) is False
+
+
+def test_keyword_widens_relevance_past_language_stack_mismatch():
+    # Tagged "go", subscriber only wants "python" — without the keyword this
+    # would never match; with it, it widens through.
+    vacancy = _vacancy(title="Go Developer", description="Интеграция с FastAPI сервисом", languages='["go"]')
+    assert _vacancy_matches(vacancy, ["python"], [], None, None, None, None) is False
+    assert _vacancy_matches(vacancy, ["python"], [], None, None, None, ["fastapi"]) is True
+
+
+def test_keyword_widening_still_respects_other_filters():
+    vacancy = _vacancy(
+        title="Go Developer", description="FastAPI integration", languages='["go"]', location="Новосибирск"
+    )
+    assert _vacancy_matches(vacancy, ["python"], [], ["Москва"], None, None, ["fastapi"]) is False
 
 
 def test_work_format_matches_selected_category():
