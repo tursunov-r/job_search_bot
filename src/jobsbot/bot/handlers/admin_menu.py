@@ -1,4 +1,5 @@
 import json
+from collections import Counter
 
 from aiogram import F, Router
 from aiogram.filters import Command
@@ -16,12 +17,15 @@ from aiogram.types import (
 from jobsbot.ads.campaigns import send_broadcast_now
 from jobsbot.bot.permissions import PERMISSIONS, get_permissions, has_permission, is_super_admin
 from jobsbot.config import settings
+from jobsbot.processing.languages import LANGUAGES
+from jobsbot.processing.work_formats import WORK_FORMATS
 from jobsbot.storage.db import async_session
 from jobsbot.storage.repo import (
     add_required_channel,
     add_staff_member,
     add_telegram_channel,
     block_subscriber_by_telegram_id,
+    get_broadcastable_subscribers,
     get_source_by_id,
     get_subscriber_counts_by_status,
     list_required_channels,
@@ -527,6 +531,19 @@ async def handle_remove_staff(callback: CallbackQuery) -> None:
 _STATUS_LABELS = {"active": "активных", "paused": "на паузе", "blocked": "заблокированных"}
 
 
+def _json_list(value: str) -> list[str]:
+    try:
+        return json.loads(value)
+    except (TypeError, ValueError):
+        return []
+
+
+def _format_top(counts: Counter, label_for: callable, limit: int = 15) -> list[str]:
+    if not counts:
+        return ["  (пока никто не выбрал)"]
+    return [f"  {label_for(key)}: {count}" for key, count in counts.most_common(limit)]
+
+
 @router.message(F.text == BTN_STATS)
 async def handle_stats_button(message: Message) -> None:
     if message.from_user is None or not is_super_admin(message.from_user.id):
@@ -534,9 +551,32 @@ async def handle_stats_button(message: Message) -> None:
 
     async with async_session() as session:
         counts = await get_subscriber_counts_by_status(session)
+        # Status breakdown is cheap (grouped in SQL); language/city/format
+        # popularity needs the actual filter values, which only live as
+        # JSON-in-text columns — fine to aggregate in Python at this scale
+        # (subscriber count, not vacancy count).
+        reachable_subscribers = await get_broadcastable_subscribers(session)
+
+    language_counts = Counter()
+    city_counts = Counter()
+    work_format_counts = Counter()
+    for subscriber in reachable_subscribers:
+        language_counts.update(_json_list(subscriber.languages))
+        city_counts.update(_json_list(subscriber.cities))
+        work_format_counts.update(_json_list(subscriber.work_formats))
 
     total = sum(counts.values())
     lines = [f"👤 Всего зарегистрировано: {total}"]
     for status, label in _STATUS_LABELS.items():
         lines.append(f"— {label}: {counts.get(status, 0)}")
+
+    lines.append("\n💻 Топ языков/сфер (по выбору в фильтрах):")
+    lines.extend(_format_top(language_counts, lambda key: LANGUAGES[key].label if key in LANGUAGES else key))
+
+    lines.append("\n🏙 Топ городов (по фильтру подписчиков):")
+    lines.extend(_format_top(city_counts, lambda key: key))
+
+    lines.append("\n🧭 Форматы работы (по фильтру подписчиков):")
+    lines.extend(_format_top(work_format_counts, lambda key: WORK_FORMATS.get(key, key)))
+
     await message.answer("\n".join(lines))
