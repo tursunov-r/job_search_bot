@@ -11,6 +11,7 @@ def build_dispatcher() -> Dispatcher:
     from jobsbot.bot.handlers import (
         admin,
         admin_menu,
+        favorites,
         interview_prep,
         reports,
         resume_improve,
@@ -22,6 +23,7 @@ def build_dispatcher() -> Dispatcher:
     dp.include_router(admin_menu.router)
     dp.include_router(admin.router)
     dp.include_router(reports.router)
+    dp.include_router(favorites.router)
     dp.include_router(interview_prep.router)
     dp.include_router(resume_improve.router)
     dp.include_router(subscriber_menu.router)

@@ -59,12 +59,17 @@ def format_vacancy(vacancy: Vacancy) -> str:
     return "\n\n".join(blocks)
 
 
-def build_vacancy_keyboard(vacancy: Vacancy) -> InlineKeyboardMarkup:
+def build_vacancy_keyboard(vacancy: Vacancy, saved: bool = False) -> InlineKeyboardMarkup:
     row = []
     if vacancy.url:
         row.append(InlineKeyboardButton(text="🔗 Подробнее", url=vacancy.url))
     row.append(InlineKeyboardButton(text="🚩 Пожаловаться", callback_data=f"report:{vacancy.id}"))
-    return InlineKeyboardMarkup(inline_keyboard=[row])
+    save_button = (
+        InlineKeyboardButton(text="🗑 Убрать из избранного", callback_data=f"unsave:{vacancy.id}")
+        if saved
+        else InlineKeyboardButton(text="⭐ Сохранить", callback_data=f"save:{vacancy.id}")
+    )
+    return InlineKeyboardMarkup(inline_keyboard=[row, [save_button]])
 
 
 def _json_list(value: str) -> list[str]:

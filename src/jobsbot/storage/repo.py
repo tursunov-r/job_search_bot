@@ -14,6 +14,7 @@ from jobsbot.storage.models import (
     GroupTopic,
     GroupTopicPost,
     RequiredChannel,
+    SavedVacancy,
     Source,
     StaffMember,
     Subscriber,
@@ -105,6 +106,46 @@ async def get_vacancy_by_url(session: AsyncSession, url: str) -> Vacancy | None:
 async def get_vacancy_by_id(session: AsyncSession, vacancy_id: int) -> Vacancy | None:
     result = await session.exec(select(Vacancy).where(Vacancy.id == vacancy_id))
     return result.first()
+
+
+async def save_vacancy(session: AsyncSession, subscriber_id: int, vacancy_id: int) -> bool:
+    """Idempotent — saving an already-saved vacancy is a harmless no-op
+    (returns False) rather than a unique-constraint error."""
+    result = await session.exec(
+        select(SavedVacancy).where(
+            SavedVacancy.subscriber_id == subscriber_id, SavedVacancy.vacancy_id == vacancy_id
+        )
+    )
+    if result.first() is not None:
+        return False
+    session.add(SavedVacancy(subscriber_id=subscriber_id, vacancy_id=vacancy_id))
+    await session.commit()
+    return True
+
+
+async def unsave_vacancy(session: AsyncSession, subscriber_id: int, vacancy_id: int) -> bool:
+    result = await session.exec(
+        select(SavedVacancy).where(
+            SavedVacancy.subscriber_id == subscriber_id, SavedVacancy.vacancy_id == vacancy_id
+        )
+    )
+    saved = result.first()
+    if saved is None:
+        return False
+    await session.delete(saved)
+    await session.commit()
+    return True
+
+
+async def list_saved_vacancies(session: AsyncSession, subscriber_id: int, limit: int = 30) -> list[Vacancy]:
+    result = await session.exec(
+        select(Vacancy)
+        .join(SavedVacancy, SavedVacancy.vacancy_id == Vacancy.id)
+        .where(SavedVacancy.subscriber_id == subscriber_id)
+        .order_by(SavedVacancy.saved_at.desc())
+        .limit(limit)
+    )
+    return list(result.all())
 
 
 async def insert_vacancy(session: AsyncSession, vacancy: Vacancy) -> Vacancy:
@@ -659,18 +700,43 @@ async def cleanup_old_vacancies(session: AsyncSession, retention_days: int) -> i
     any subscriber cursor that still points inside the range about to be
     deleted — otherwise it'd end up referencing a row that no longer
     exists, and (since the cursor comparison treats a lower id as "still
-    pending") could resurrect everything after it as unseen."""
+    pending") could resurrect everything after it as unseen.
+
+    Anything currently bookmarked in someone's "⭐ Избранное" is excluded
+    from deletion entirely — saving is meant to pin a vacancy past the
+    normal retention window until the subscriber unsaves it themselves."""
     cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
     result = await session.exec(select(Vacancy.id).where(Vacancy.first_seen_at < cutoff))
-    old_ids = list(result.all())
+    candidate_ids = list(result.all())
+    if not candidate_ids:
+        return 0
+
+    saved_result = await session.exec(
+        select(SavedVacancy.vacancy_id).where(SavedVacancy.vacancy_id.in_(candidate_ids))
+    )
+    saved_ids = set(saved_result.all())
+    old_ids = [vacancy_id for vacancy_id in candidate_ids if vacancy_id not in saved_ids]
     if not old_ids:
         return 0
 
     max_old_id = max(old_ids)
+    # last_vacancy_sent_id is a real FK — it can never point at a row we're
+    # about to delete (previously this used max_old_id itself, which *is*
+    # one of the ids being deleted, and would crash the whole cleanup with
+    # a foreign-key violation for any subscriber whose cursor already sat
+    # at or below it, e.g. one who signed up and never advanced). Advance
+    # affected cursors to the highest vacancy id that will still exist at
+    # or below max_old_id instead (a saved one in that range, if any), or
+    # NULL if nothing in that range survives.
+    safe_cursor_target = (
+        await session.exec(
+            select(func.max(Vacancy.id)).where(Vacancy.id <= max_old_id, Vacancy.id.not_in(old_ids))
+        )
+    ).first()
     await session.execute(
         update(Subscriber)
-        .where(Subscriber.last_vacancy_sent_id < max_old_id)
-        .values(last_vacancy_sent_id=max_old_id)
+        .where(Subscriber.last_vacancy_sent_id <= max_old_id)
+        .values(last_vacancy_sent_id=safe_cursor_target)
     )
     await session.execute(delete(VacancyDelivery).where(VacancyDelivery.vacancy_id.in_(old_ids)))
     await session.execute(delete(VacancyReport).where(VacancyReport.vacancy_id.in_(old_ids)))

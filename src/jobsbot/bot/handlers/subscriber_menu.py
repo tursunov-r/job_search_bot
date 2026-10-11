@@ -46,6 +46,7 @@ BTN_KEYWORDS = "🔍 Поиск по слову"
 BTN_INTERVIEW_PREP = "🎯 Подготовка к интервью"
 BTN_RESUME_IMPROVE = "✨ Улучшить резюме"
 BTN_VIEW = "👀 Смотреть вакансии"
+BTN_FAVORITES = "⭐ Избранное"
 BTN_STOP = "⏸ Остановить рассылку"
 
 CALLBACK_PREFIX = "addstack"
@@ -66,6 +67,7 @@ MENU_BUTTON_TEXTS = {
     BTN_INTERVIEW_PREP,
     BTN_RESUME_IMPROVE,
     BTN_VIEW,
+    BTN_FAVORITES,
     BTN_STOP,
 }
 
@@ -98,7 +100,7 @@ def build_menu_keyboard(extra_rows: list[list[KeyboardButton]] | None = None) ->
     rows = [
         [KeyboardButton(text=BTN_ADD_STACK), KeyboardButton(text=BTN_CITY), KeyboardButton(text=BTN_WORK_FORMAT)],
         [KeyboardButton(text=BTN_SALARY), KeyboardButton(text=BTN_KEYWORDS)],
-        [KeyboardButton(text=BTN_VIEW), KeyboardButton(text=BTN_STOP)],
+        [KeyboardButton(text=BTN_VIEW), KeyboardButton(text=BTN_FAVORITES), KeyboardButton(text=BTN_STOP)],
     ]
     if settings.gemini_enabled:
         rows.append([KeyboardButton(text=BTN_INTERVIEW_PREP), KeyboardButton(text=BTN_RESUME_IMPROVE)])

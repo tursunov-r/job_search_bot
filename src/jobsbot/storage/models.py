@@ -121,6 +121,21 @@ class VacancyDelivery(SQLModel, table=True):
     delivered_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class SavedVacancy(SQLModel, table=True):
+    """A subscriber's "⭐ Избранное" bookmark on a vacancy — independent of
+    VacancyDelivery (which just tracks what was ever sent, for dedup).
+    Saved vacancies are re-rendered on request via the "⭐ Избранное" menu
+    button, not auto-expired — a subscriber decides when to unsave."""
+
+    __tablename__ = "saved_vacancies"
+    __table_args__ = (UniqueConstraint("subscriber_id", "vacancy_id"),)
+
+    id: int | None = Field(default=None, primary_key=True)
+    subscriber_id: int = Field(foreign_key="subscribers.id", index=True)
+    vacancy_id: int = Field(foreign_key="vacancies.id", index=True)
+    saved_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class VacancyReport(SQLModel, table=True):
     """A subscriber's complaint about a vacancy, with a mandatory comment —
     created the moment they report it (which also immediately hides the
