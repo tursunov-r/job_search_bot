@@ -1,5 +1,7 @@
 import json
+import logging
 from collections import Counter
+from pathlib import Path
 
 from aiogram import F, Router
 from aiogram.filters import Command
@@ -15,6 +17,7 @@ from aiogram.types import (
 )
 
 from jobsbot.ads.campaigns import send_broadcast_now
+from jobsbot.ai.gemini_client import GeminiError, generate
 from jobsbot.bot.permissions import PERMISSIONS, get_permissions, has_permission, is_super_admin
 from jobsbot.config import settings
 from jobsbot.processing.languages import LANGUAGES
@@ -37,7 +40,11 @@ from jobsbot.storage.repo import (
     unblock_subscriber_by_telegram_id,
 )
 
+logger = logging.getLogger(__name__)
 router = Router()
+
+_AD_DRAFT_PROMPT_PATH = Path(__file__).resolve().parents[4] / "docs" / "gemini_promts" / "ad_draft.md"
+_AD_DRAFT_PROMPT_TEXT = _AD_DRAFT_PROMPT_PATH.read_text(encoding="utf-8")
 
 BTN_CHANNELS = "📡 Каналы"
 BTN_USERS = "🚫 Пользователи"
@@ -276,6 +283,14 @@ async def handle_broadcast_start(callback: CallbackQuery, state: FSMContext) -> 
     await callback.answer()
 
 
+def _broadcast_preview_keyboard(offer_ai_draft: bool) -> InlineKeyboardMarkup:
+    rows = [[InlineKeyboardButton(text="✅ Отправить всем", callback_data="ad:confirm")]]
+    if offer_ai_draft:
+        rows.append([InlineKeyboardButton(text="🤖 Оформить через AI", callback_data="ad:ai_draft")])
+    rows.append([InlineKeyboardButton(text="❌ Отмена", callback_data="ad:cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 @router.message(AdminFSM.broadcast_text)
 async def handle_broadcast_text_input(message: Message, state: FSMContext) -> None:
     if message.from_user is None or not is_super_admin(message.from_user.id):
@@ -291,17 +306,70 @@ async def handle_broadcast_text_input(message: Message, state: FSMContext) -> No
         await message.answer("Текст не может быть пустым — пришли текст объявления.")
         return
 
-    await state.update_data(broadcast_text=text)
+    # broadcast_text_original never changes once set — "↩️ Свой текст"
+    # always restores exactly what was typed here, even after any number
+    # of AI redrafts.
+    await state.update_data(broadcast_text=text, broadcast_text_original=text)
+    await state.set_state(AdminFSM.broadcast_confirm)
+    await message.answer(
+        f"Предпросмотр:\n\n{text}\n\nОтправить это всем пользователям?",
+        reply_markup=_broadcast_preview_keyboard(offer_ai_draft=settings.gemini_enabled),
+    )
+
+
+@router.callback_query(AdminFSM.broadcast_confirm, F.data == "ad:ai_draft")
+async def handle_broadcast_ai_draft(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user is None or not is_super_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    if not settings.gemini_enabled:
+        await callback.answer()
+        return
+
+    data = await state.get_data()
+    original = data.get("broadcast_text_original", "")
+    await callback.answer("Составляю черновик...")
+    await callback.message.edit_text("⏳ Составляю черновик через AI...")
+
+    try:
+        draft = await generate(f"{_AD_DRAFT_PROMPT_TEXT}\n{original}")
+    except GeminiError:
+        logger.exception("Ad draft generation failed")
+        await state.set_state(AdminFSM.broadcast_confirm)
+        await callback.message.edit_text(
+            f"Не получилось составить черновик — попробуй ещё раз позже.\n\nПредпросмотр:\n\n{original}",
+            reply_markup=_broadcast_preview_keyboard(offer_ai_draft=True),
+        )
+        return
+
+    await state.update_data(broadcast_text=draft)
     await state.set_state(AdminFSM.broadcast_confirm)
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Отправить всем", callback_data="ad:confirm")],
             [
-                InlineKeyboardButton(text="✅ Отправить всем", callback_data="ad:confirm"),
-                InlineKeyboardButton(text="❌ Отмена", callback_data="ad:cancel"),
-            ]
+                InlineKeyboardButton(text="🔄 Другой вариант", callback_data="ad:ai_draft"),
+                InlineKeyboardButton(text="↩️ Свой текст", callback_data="ad:use_raw"),
+            ],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="ad:cancel")],
         ]
     )
-    await message.answer(f"Предпросмотр:\n\n{text}\n\nОтправить это всем пользователям?", reply_markup=keyboard)
+    await callback.message.edit_text(f"Черновик от AI:\n\n{draft}\n\nОтправить это всем пользователям?", reply_markup=keyboard)
+
+
+@router.callback_query(AdminFSM.broadcast_confirm, F.data == "ad:use_raw")
+async def handle_broadcast_use_raw(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user is None or not is_super_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    data = await state.get_data()
+    original = data.get("broadcast_text_original", "")
+    await state.update_data(broadcast_text=original)
+    await callback.message.edit_text(
+        f"Предпросмотр:\n\n{original}\n\nОтправить это всем пользователям?",
+        reply_markup=_broadcast_preview_keyboard(offer_ai_draft=settings.gemini_enabled),
+    )
+    await callback.answer()
 
 
 @router.callback_query(AdminFSM.broadcast_confirm, F.data == "ad:cancel")
