@@ -114,18 +114,22 @@ def _keyword_pattern(keyword: str) -> re.Pattern:
     return pattern
 
 
+def tag_matches(title: str, description: str | None, tag_key: str) -> bool:
+    """Whether a single tag's keywords appear in title+description — used
+    by repo.get_stack_cooccurrence to count each tag separately (unlike
+    matches_stack, which is a single OR-across-all-selected check for
+    filtering)."""
+    tag = STACK_TAGS.get(tag_key)
+    if tag is None:
+        return False
+    text = f"{title or ''} {description or ''}"
+    return any(_keyword_pattern(kw).search(text) for kw in tag.keywords)
+
+
 def matches_stack(title: str, description: str | None, selected_keys: list[str]) -> bool:
     """No tags selected = no filter (everything matches). Otherwise match if
     any keyword from any selected tag appears in title+description."""
     if not selected_keys:
         return True
 
-    text = f"{title or ''} {description or ''}"
-    for key in selected_keys:
-        tag = STACK_TAGS.get(key)
-        if tag is None:
-            continue
-        if any(_keyword_pattern(kw).search(text) for kw in tag.keywords):
-            return True
-
-    return False
+    return any(tag_matches(title, description, key) for key in selected_keys)

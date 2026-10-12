@@ -8,6 +8,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from jobsbot.config import settings
 from jobsbot.processing.salary import parse_salary_min_rub
+from jobsbot.processing.stack_tags import tag_matches, visible_tag_keys
 from jobsbot.storage.models import (
     AdapterHealth,
     AdCampaign,
@@ -372,6 +373,32 @@ async def get_subscriber_counts_by_status(session: AsyncSession) -> dict[str, in
     callers sum the values themselves."""
     result = await session.exec(select(Subscriber.status, func.count()).group_by(Subscriber.status))
     return dict(result.all())
+
+
+async def get_stack_cooccurrence(session: AsyncSession, language_key: str) -> dict:
+    """For every currently visible vacancy tagged with language_key, what
+    fraction also mentions each relevant stack tag (language-specific +
+    universal infra ones) — "what's commonly asked for alongside this
+    language". {"total": 0, "tags": {}} means no vacancies for that
+    language at all; a tag simply absent from "tags" means zero matches,
+    not unknown (unlike the salary stats, every vacancy's text is always
+    checkable here, there's no missing-data case)."""
+    result = await session.exec(
+        select(Vacancy.title, Vacancy.description).where(
+            Vacancy.languages.like(f'%"{language_key}"%'), Vacancy.hidden == False  # noqa: E712
+        )
+    )
+    rows = result.all()
+    total = len(rows)
+    if total == 0:
+        return {"total": 0, "tags": {}}
+
+    counts: dict[str, int] = {}
+    for tag_key in visible_tag_keys([language_key]):
+        count = sum(1 for title, description in rows if tag_matches(title, description, tag_key))
+        if count:
+            counts[tag_key] = count
+    return {"total": total, "tags": counts}
 
 
 async def get_salary_stats_by_language(session: AsyncSession, language_keys: list[str]) -> dict[str, dict]:

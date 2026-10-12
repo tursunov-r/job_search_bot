@@ -24,6 +24,7 @@ from jobsbot.storage.db import async_session
 from jobsbot.storage.repo import (
     get_or_create_subscriber,
     get_salary_stats_by_language,
+    get_stack_cooccurrence,
     get_subscriber_by_telegram_id,
     pause_subscriber_by_telegram_id,
     resume_subscriber_by_telegram_id,
@@ -51,6 +52,7 @@ BTN_RESUME_IMPROVE = "✨ Улучшить резюме"
 BTN_VIEW = "👀 Смотреть вакансии"
 BTN_FAVORITES = "⭐ Избранное"
 BTN_MARKET = "📊 Рынок зарплат"
+BTN_SKILLS_DEMAND = "🧩 Спрос на навыки"
 BTN_STOP = "⏸ Остановить рассылку"
 
 CALLBACK_PREFIX = "addstack"
@@ -75,6 +77,7 @@ MENU_BUTTON_TEXTS = {
     BTN_VIEW,
     BTN_FAVORITES,
     BTN_MARKET,
+    BTN_SKILLS_DEMAND,
     BTN_STOP,
 }
 
@@ -111,7 +114,8 @@ def build_menu_keyboard(extra_rows: list[list[KeyboardButton]] | None = None) ->
     rows = [
         [KeyboardButton(text=BTN_ADD_STACK), KeyboardButton(text=BTN_CITY), KeyboardButton(text=BTN_WORK_FORMAT)],
         [KeyboardButton(text=BTN_SALARY), KeyboardButton(text=BTN_KEYWORDS), KeyboardButton(text=BTN_QUIET_HOURS)],
-        [KeyboardButton(text=BTN_VIEW), KeyboardButton(text=BTN_FAVORITES), KeyboardButton(text=BTN_MARKET)],
+        [KeyboardButton(text=BTN_VIEW), KeyboardButton(text=BTN_FAVORITES)],
+        [KeyboardButton(text=BTN_MARKET), KeyboardButton(text=BTN_SKILLS_DEMAND)],
         [KeyboardButton(text=BTN_STOP)],
     ]
     if settings.gemini_enabled:
@@ -892,6 +896,54 @@ async def handle_market_button(message: Message) -> None:
     lines.append("\nУчтены только вакансии с указанной зарплатой в рублях.")
 
     await send_system_message(message.bot, message.from_user.id, "\n".join(lines), reply_markup=keyboard)
+
+
+@router.message(F.text == BTN_SKILLS_DEMAND)
+async def handle_skills_demand_button(message: Message) -> None:
+    if message.from_user is None:
+        return
+    await _delete_quietly(message)
+    keyboard = await current_menu_keyboard(message.from_user.id)
+
+    async with async_session() as session:
+        subscriber = await get_or_create_subscriber(
+            session, telegram_user_id=message.from_user.id, username=message.from_user.username
+        )
+        selected_languages = _json_list(subscriber.languages)
+        if not selected_languages:
+            await send_system_message(
+                message.bot,
+                message.from_user.id,
+                f"Сначала выбери язык через «{BTN_ADD_STACK}» — тогда покажу, что чаще всего просят вместе с ним.",
+                reply_markup=keyboard,
+            )
+            return
+
+        sections = []
+        for lang_key in selected_languages:
+            co = await get_stack_cooccurrence(session, lang_key)
+            if not co["tags"]:
+                continue
+            label = LANGUAGES[lang_key].label if lang_key in LANGUAGES else lang_key
+            top = sorted(co["tags"].items(), key=lambda kv: kv[1], reverse=True)[:6]
+            tag_lines = [
+                f"  {STACK_TAGS[key].label if key in STACK_TAGS else key}: "
+                f"{round(count / co['total'] * 100)}%"
+                for key, count in top
+            ]
+            sections.append(f"{label} (по {co['total']} вакансиям):\n" + "\n".join(tag_lines))
+
+    if not sections:
+        await send_system_message(
+            message.bot,
+            message.from_user.id,
+            "Пока недостаточно вакансий по твоим языкам для такой аналитики — загляни позже.",
+            reply_markup=keyboard,
+        )
+        return
+
+    text = "🧩 Что чаще всего просят вместе с твоим стеком:\n\n" + "\n\n".join(sections)
+    await send_system_message(message.bot, message.from_user.id, text, reply_markup=keyboard)
 
 
 @router.message(F.text == BTN_STOP)

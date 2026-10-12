@@ -1,4 +1,4 @@
-from jobsbot.processing.stack_tags import UNIVERSAL_TAG_KEYS, matches_stack, visible_tag_keys
+from jobsbot.processing.stack_tags import UNIVERSAL_TAG_KEYS, matches_stack, tag_matches, visible_tag_keys
 
 
 def test_no_selection_matches_everything():
@@ -55,3 +55,12 @@ def test_visible_tags_includes_devops_sysadmin_qa_tags():
 
 def test_matches_qa_stack_tag_in_description():
     assert matches_stack("QA Engineer", "Пишем автотесты на Selenium и Playwright", ["selenium"])
+
+
+def test_tag_matches_checks_a_single_tag():
+    assert tag_matches("Python Developer", "Используем Redis", "redis") is True
+    assert tag_matches("Python Developer", "Используем Redis", "kafka") is False
+
+
+def test_tag_matches_unknown_tag_is_false():
+    assert tag_matches("Python Developer", "обычный текст", "not_a_real_tag") is False
