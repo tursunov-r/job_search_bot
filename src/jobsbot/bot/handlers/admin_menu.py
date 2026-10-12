@@ -1,7 +1,6 @@
 import json
 import logging
 from collections import Counter
-from pathlib import Path
 
 from aiogram import F, Router
 from aiogram.filters import Command
@@ -16,8 +15,9 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
 )
 
+from jobsbot.ads.ai_draft import draft_ad_copy
 from jobsbot.ads.campaigns import send_broadcast_now
-from jobsbot.ai.gemini_client import GeminiError, generate
+from jobsbot.ai.gemini_client import GeminiError
 from jobsbot.bot.permissions import PERMISSIONS, get_permissions, has_permission, is_super_admin
 from jobsbot.config import settings
 from jobsbot.processing.languages import LANGUAGES
@@ -41,9 +41,6 @@ from jobsbot.storage.repo import (
 
 logger = logging.getLogger(__name__)
 router = Router()
-
-_AD_DRAFT_PROMPT_PATH = Path(__file__).resolve().parents[4] / "docs" / "gemini_promts" / "ad_draft.md"
-_AD_DRAFT_PROMPT_TEXT = _AD_DRAFT_PROMPT_PATH.read_text(encoding="utf-8")
 
 BTN_CHANNELS = "📡 Каналы"
 BTN_USERS = "🚫 Пользователи"
@@ -331,7 +328,7 @@ async def handle_broadcast_ai_draft(callback: CallbackQuery, state: FSMContext) 
     await callback.message.edit_text("⏳ Составляю черновик через AI...")
 
     try:
-        draft = await generate(f"{_AD_DRAFT_PROMPT_TEXT}\n{original}")
+        draft = await draft_ad_copy(original)
     except GeminiError:
         logger.exception("Ad draft generation failed")
         await state.set_state(AdminFSM.broadcast_confirm)
