@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jobsbot Admin</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">🤖 Jobsbot</div>
+      <nav id="nav">
+        <a href="#stats" data-section="stats">📊 Статистика</a>
+        <a href="#vacancies" data-section="vacancies">💼 Вакансии</a>
+        <a href="#subscribers" data-section="subscribers">👤 Подписчики</a>
+        <a href="#reports" data-section="reports">🚩 Жалобы</a>
+        <a href="#ads" data-section="ads">📢 Реклама</a>
+        <a href="#channels" data-section="channels">📡 Каналы</a>
+        <a href="#required-channels" data-section="required-channels">🔐 Обязательные каналы</a>
+        <a href="#group-topics" data-section="group-topics">🧵 Топики группы</a>
+        <a href="#staff" data-section="staff">👥 Сотрудники</a>
+        <a href="#adapter-health" data-section="adapter-health">🩺 Здоровье парсеров</a>
+      </nav>
+    </aside>
+    <main class="content">
+      <header class="topbar">
+        <h1 id="page-title">Статистика</h1>
+      </header>
+      <div id="toast-container"></div>
+      <section id="view"></section>
+    </main>
+  </div>
+
+  <div id="modal-backdrop" class="modal-backdrop hidden">
+    <div class="modal" id="modal">
+      <button class="modal-close" id="modal-close">&times;</button>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
