@@ -204,6 +204,27 @@ async def get_active_subscribers(session: AsyncSession) -> list[Subscriber]:
     return list(result.all())
 
 
+async def list_subscribers(
+    session: AsyncSession, *, status: str | None = None, limit: int = 50, offset: int = 0
+) -> list[Subscriber]:
+    """Used by the web admin panel's subscriber list (the Telegram side
+    never needed this — blocking there is by typing a known telegram_user_id,
+    not browsing)."""
+    query = select(Subscriber).order_by(Subscriber.id.desc())
+    if status is not None:
+        query = query.where(Subscriber.status == status)
+    result = await session.exec(query.offset(offset).limit(limit))
+    return list(result.all())
+
+
+async def count_subscribers(session: AsyncSession, *, status: str | None = None) -> int:
+    query = select(func.count(Subscriber.id))
+    if status is not None:
+        query = query.where(Subscriber.status == status)
+    result = await session.exec(query)
+    return result.first() or 0
+
+
 async def get_broadcastable_subscribers(session: AsyncSession) -> list[Subscriber]:
     """Everyone who hasn't blocked the bot (or been blocked by an admin) —
     ad campaigns go out to this wider set, not just "active" (which only
