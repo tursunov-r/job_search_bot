@@ -23,6 +23,8 @@ class Settings(BaseSettings):
 
     geekjob_poll_interval_seconds: int = 600
 
+    remoteok_poll_interval_seconds: int = 600
+
     linkedin_enabled: bool = False
     linkedin_poll_interval_seconds: int = 3600
 

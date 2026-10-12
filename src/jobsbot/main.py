@@ -9,7 +9,7 @@ from jobsbot.bot.dispatcher import build_bot, build_dispatcher
 from jobsbot.bot.group_broadcast import post_new_vacancies_to_topics
 from jobsbot.bot.push import push_new_vacancies, send_weekly_digest
 from jobsbot.config import settings
-from jobsbot.ingestion import geekjob_adapter, habr_adapter, hh_adapter, linkedin_adapter
+from jobsbot.ingestion import geekjob_adapter, habr_adapter, hh_adapter, linkedin_adapter, remoteok_adapter
 from jobsbot.ingestion.telegram_poller import TelegramChannelPoller
 from jobsbot.processing.languages import LANGUAGES
 from jobsbot.processing.pipeline import ingest
@@ -217,6 +217,43 @@ async def poll_geekjob(bot=None) -> None:
                 await asyncio.sleep(geekjob_adapter.DETAIL_FETCH_DELAY_SECONDS)
 
 
+async def poll_remoteok_language(language_key: str) -> tuple[int, list]:
+    try:
+        raw_vacancies = await remoteok_adapter.fetch_vacancies(language_key)
+    except Exception:
+        logger.exception("RemoteOK polling failed for language %s", language_key)
+        return 0, []
+
+    new_vacancies = []
+    async with async_session() as session:
+        source = await get_or_create_source(
+            session, "remoteok", f"remoteok_{language_key}", f"RemoteOK ({LANGUAGES[language_key].label})"
+        )
+        for raw in raw_vacancies:
+            # needs_details=False — everything RemoteOK gives us is already
+            # in the one JSON response, no separate detail-page fetch like
+            # HH/Habr.
+            vacancy = await ingest(session, raw, source.id, language_hint=language_key, needs_details=False)
+            if vacancy:
+                new_vacancies.append(vacancy)
+    logger.info(
+        "RemoteOK poll [%s]: fetched %d, inserted %d new", language_key, len(raw_vacancies), len(new_vacancies)
+    )
+    return len(raw_vacancies), new_vacancies
+
+
+async def poll_remoteok(bot=None) -> None:
+    total_raw = 0
+    language_keys = list(remoteok_adapter.REMOTEOK_TAG_BY_LANGUAGE.keys())
+    for i, language_key in enumerate(language_keys):
+        raw_count, _ = await poll_remoteok_language(language_key)
+        total_raw += raw_count
+        if i < len(language_keys) - 1:
+            await asyncio.sleep(1)
+
+    await _check_adapter_health(bot, "remoteok", "RemoteOK", total_raw)
+
+
 async def poll_linkedin() -> None:
     try:
         raw_vacancies = await linkedin_adapter.fetch_vacancies()
@@ -258,6 +295,7 @@ async def main() -> None:
     scheduler.add_job(poll_hh, "interval", seconds=settings.hh_poll_interval_seconds, args=[bot])
     scheduler.add_job(poll_habr, "interval", seconds=settings.habr_poll_interval_seconds, args=[bot])
     scheduler.add_job(poll_geekjob, "interval", seconds=settings.geekjob_poll_interval_seconds, args=[bot])
+    scheduler.add_job(poll_remoteok, "interval", seconds=settings.remoteok_poll_interval_seconds, args=[bot])
     if settings.linkedin_enabled:
         scheduler.add_job(poll_linkedin, "interval", seconds=settings.linkedin_poll_interval_seconds)
     if telegram_poller is not None:
@@ -308,6 +346,7 @@ async def main() -> None:
     _track(asyncio.create_task(poll_hh(bot)))
     _track(asyncio.create_task(poll_habr(bot)))
     _track(asyncio.create_task(poll_geekjob(bot)))
+    _track(asyncio.create_task(poll_remoteok(bot)))
     if settings.linkedin_enabled:
         _track(asyncio.create_task(poll_linkedin()))
     if telegram_poller is not None:
