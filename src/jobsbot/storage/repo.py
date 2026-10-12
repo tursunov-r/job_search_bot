@@ -374,6 +374,32 @@ async def get_subscriber_counts_by_status(session: AsyncSession) -> dict[str, in
     return dict(result.all())
 
 
+async def get_salary_stats_by_language(session: AsyncSession, language_keys: list[str]) -> dict[str, dict]:
+    """Per-language salary snapshot (count/median/min/max) from
+    Vacancy.salary_min_rub — only vacancies with a known RUB figure count,
+    same fail-open reasoning as the salary filter (push.py::_matches_salary):
+    a vacancy with an unknown/non-RUB salary is skipped here, not treated
+    as zero. Hidden vacancies are excluded. A language with no priced
+    vacancies simply doesn't appear in the result — callers decide how to
+    present "not enough data"."""
+    stats: dict[str, dict] = {}
+    for key in language_keys:
+        result = await session.exec(
+            select(Vacancy.salary_min_rub).where(
+                Vacancy.languages.like(f'%"{key}"%'),
+                Vacancy.salary_min_rub != None,  # noqa: E711
+                Vacancy.hidden == False,  # noqa: E712
+            )
+        )
+        values = sorted(result.all())
+        if not values:
+            continue
+        n = len(values)
+        median = values[n // 2] if n % 2 == 1 else (values[n // 2 - 1] + values[n // 2]) / 2
+        stats[key] = {"count": n, "median": round(median), "min": values[0], "max": values[-1]}
+    return stats
+
+
 async def get_subscriber_filter_stats(session: AsyncSession) -> dict:
     """Shared by the Telegram "📊 Статистика" button and the web admin API
     (jobsbot.web.routers.stats) — one place for this aggregation so the two

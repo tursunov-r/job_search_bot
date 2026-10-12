@@ -23,6 +23,7 @@ from jobsbot.processing.work_formats import WORK_FORMATS
 from jobsbot.storage.db import async_session
 from jobsbot.storage.repo import (
     get_or_create_subscriber,
+    get_salary_stats_by_language,
     get_subscriber_by_telegram_id,
     pause_subscriber_by_telegram_id,
     resume_subscriber_by_telegram_id,
@@ -49,6 +50,7 @@ BTN_INTERVIEW_PREP = "🎯 Подготовка к интервью"
 BTN_RESUME_IMPROVE = "✨ Улучшить резюме"
 BTN_VIEW = "👀 Смотреть вакансии"
 BTN_FAVORITES = "⭐ Избранное"
+BTN_MARKET = "📊 Рынок зарплат"
 BTN_STOP = "⏸ Остановить рассылку"
 
 CALLBACK_PREFIX = "addstack"
@@ -72,6 +74,7 @@ MENU_BUTTON_TEXTS = {
     BTN_RESUME_IMPROVE,
     BTN_VIEW,
     BTN_FAVORITES,
+    BTN_MARKET,
     BTN_STOP,
 }
 
@@ -108,7 +111,8 @@ def build_menu_keyboard(extra_rows: list[list[KeyboardButton]] | None = None) ->
     rows = [
         [KeyboardButton(text=BTN_ADD_STACK), KeyboardButton(text=BTN_CITY), KeyboardButton(text=BTN_WORK_FORMAT)],
         [KeyboardButton(text=BTN_SALARY), KeyboardButton(text=BTN_KEYWORDS), KeyboardButton(text=BTN_QUIET_HOURS)],
-        [KeyboardButton(text=BTN_VIEW), KeyboardButton(text=BTN_FAVORITES), KeyboardButton(text=BTN_STOP)],
+        [KeyboardButton(text=BTN_VIEW), KeyboardButton(text=BTN_FAVORITES), KeyboardButton(text=BTN_MARKET)],
+        [KeyboardButton(text=BTN_STOP)],
     ]
     if settings.gemini_enabled:
         rows.append([KeyboardButton(text=BTN_INTERVIEW_PREP), KeyboardButton(text=BTN_RESUME_IMPROVE)])
@@ -846,6 +850,48 @@ async def handle_view_vacancies(message: Message) -> None:
             "пришлю, как только появятся новые.",
             reply_markup=keyboard,
         )
+
+
+@router.message(F.text == BTN_MARKET)
+async def handle_market_button(message: Message) -> None:
+    if message.from_user is None:
+        return
+    await _delete_quietly(message)
+
+    async with async_session() as session:
+        subscriber = await get_or_create_subscriber(
+            session, telegram_user_id=message.from_user.id, username=message.from_user.username
+        )
+        selected_languages = _json_list(subscriber.languages)
+        stats = await get_salary_stats_by_language(session, selected_languages or list(LANGUAGES.keys()))
+
+    keyboard = await current_menu_keyboard(message.from_user.id)
+    if not stats:
+        await send_system_message(
+            message.bot,
+            message.from_user.id,
+            "Пока недостаточно вакансий с указанной зарплатой для аналитики — загляни позже.",
+            reply_markup=keyboard,
+        )
+        return
+
+    ranked = sorted(stats.items(), key=lambda kv: kv[1]["count"], reverse=True)
+    if not selected_languages:
+        ranked = ranked[:10]
+
+    header = (
+        "💰 Медианная зарплата по твоим языкам:" if selected_languages else "💰 Медианная зарплата по топ языкам:"
+    )
+    lines = [header]
+    for key, s in ranked:
+        label = LANGUAGES[key].label if key in LANGUAGES else key
+        median = f"{s['median']:,}".replace(",", " ")
+        lo = f"{s['min']:,}".replace(",", " ")
+        hi = f"{s['max']:,}".replace(",", " ")
+        lines.append(f"{label}: {median} ₽ (от {lo} до {hi}, по {s['count']} вакансиям)")
+    lines.append("\nУчтены только вакансии с указанной зарплатой в рублях.")
+
+    await send_system_message(message.bot, message.from_user.id, "\n".join(lines), reply_markup=keyboard)
 
 
 @router.message(F.text == BTN_STOP)
