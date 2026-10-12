@@ -24,5 +24,16 @@ services:
     volumes:
       - ./data:/app/data
 
+  web:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    ports:
+      - "${WEB_PORT:-8000}:8000"
+    command: ["python", "-m", "uvicorn", "jobsbot.web.app:app", "--host", "0.0.0.0", "--port", "8000"]
+
 volumes:
   pgdata:

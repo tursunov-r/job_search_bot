@@ -49,6 +49,20 @@ class Settings(BaseSettings):
     # picker, a much bigger feature), just the primary market's zone.
     bot_timezone: str = "Asia/Almaty"
 
+    # Web admin panel (FastAPI, separate "web" service/container) — single
+    # shared HTTP Basic credential pair, no per-staff roles yet (that's a
+    # deliberate v1 simplification, same trade-off as everywhere else that
+    # starts simple and gets layered later if needed).
+    #
+    # Deliberately NOT required (unlike bot_token/db_password): this one
+    # Settings object is imported by the bot process too, which doesn't
+    # use it at all — a missing env var here must never crash the bot.
+    # The default is a placeholder, not a real credential — change it in
+    # .env before relying on it for anything.
+    web_admin_username: str = "admin"
+    web_admin_password: str = "change-me"
+    web_port: int = 8000
+
     vacancy_retention_days: int = 14
     vacancy_cleanup_interval_seconds: int = 86400
 
