@@ -760,6 +760,19 @@ async def get_vacancy_report(session: AsyncSession, report_id: int) -> VacancyRe
     return result.first()
 
 
+async def list_vacancy_reports(
+    session: AsyncSession, *, status: str | None = "pending", limit: int = 50
+) -> list[VacancyReport]:
+    """Used by the web admin panel's report queue — the Telegram side
+    never needed a list view since each report is pushed to admins
+    individually as its own message when filed."""
+    query = select(VacancyReport).order_by(VacancyReport.id.desc())
+    if status is not None:
+        query = query.where(VacancyReport.status == status)
+    result = await session.exec(query.limit(limit))
+    return list(result.all())
+
+
 async def resolve_vacancy_report(
     session: AsyncSession, report: VacancyReport, status: str, resolved_by_telegram_user_id: int
 ) -> None:

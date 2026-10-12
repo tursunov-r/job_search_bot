@@ -13,7 +13,7 @@ from fastapi import Depends, FastAPI
 
 from jobsbot.storage.db import init_db
 from jobsbot.web.auth import require_admin
-from jobsbot.web.routers import ads, channels, required_channels, staff, stats, subscribers
+from jobsbot.web.routers import ads, channels, reports, required_channels, staff, stats, subscribers
 
 logging.basicConfig(level=logging.INFO)
 
@@ -24,6 +24,7 @@ app.include_router(channels.router)
 app.include_router(staff.router)
 app.include_router(required_channels.router)
 app.include_router(ads.router)
+app.include_router(reports.router)
 
 
 @app.on_event("startup")
