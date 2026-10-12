@@ -1,4 +1,5 @@
 import json
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, or_
@@ -277,6 +278,38 @@ async def get_subscriber_counts_by_status(session: AsyncSession) -> dict[str, in
     callers sum the values themselves."""
     result = await session.exec(select(Subscriber.status, func.count()).group_by(Subscriber.status))
     return dict(result.all())
+
+
+async def get_subscriber_filter_stats(session: AsyncSession) -> dict:
+    """Shared by the Telegram "📊 Статистика" button and the web admin API
+    (jobsbot.web.routers.stats) — one place for this aggregation so the two
+    surfaces can't drift. languages/cities/work_formats only cover
+    reachable (non-blocked) subscribers; by_status covers everyone."""
+    by_status = await get_subscriber_counts_by_status(session)
+    reachable = await get_broadcastable_subscribers(session)
+
+    language_counts: Counter = Counter()
+    city_counts: Counter = Counter()
+    work_format_counts: Counter = Counter()
+    for subscriber in reachable:
+        language_counts.update(_json_list_or_empty(subscriber.languages))
+        city_counts.update(_json_list_or_empty(subscriber.cities))
+        work_format_counts.update(_json_list_or_empty(subscriber.work_formats))
+
+    return {
+        "total": sum(by_status.values()),
+        "by_status": by_status,
+        "languages": dict(language_counts),
+        "cities": dict(city_counts),
+        "work_formats": dict(work_format_counts),
+    }
+
+
+def _json_list_or_empty(value: str | None) -> list[str]:
+    try:
+        return json.loads(value) if value else []
+    except (TypeError, ValueError):
+        return []
 
 
 def _details_ready_clause():
