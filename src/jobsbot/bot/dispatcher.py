@@ -15,6 +15,7 @@ def build_dispatcher() -> Dispatcher:
         interview_prep,
         reports,
         resume_improve,
+        skill_gap,
         start,
         subscriber_menu,
     )
@@ -26,6 +27,7 @@ def build_dispatcher() -> Dispatcher:
     dp.include_router(favorites.router)
     dp.include_router(interview_prep.router)
     dp.include_router(resume_improve.router)
+    dp.include_router(skill_gap.router)
     dp.include_router(subscriber_menu.router)
     dp.include_router(start.router)
     return dp

@@ -49,6 +49,7 @@ BTN_KEYWORDS = "🔍 Поиск по слову"
 BTN_QUIET_HOURS = "🌙 Тихие часы"
 BTN_INTERVIEW_PREP = "🎯 Подготовка к интервью"
 BTN_RESUME_IMPROVE = "✨ Улучшить резюме"
+BTN_SKILL_GAP = "📈 Резюме vs рынок"
 BTN_VIEW = "👀 Смотреть вакансии"
 BTN_FAVORITES = "⭐ Избранное"
 BTN_MARKET = "📊 Рынок зарплат"
@@ -74,6 +75,7 @@ MENU_BUTTON_TEXTS = {
     BTN_QUIET_HOURS,
     BTN_INTERVIEW_PREP,
     BTN_RESUME_IMPROVE,
+    BTN_SKILL_GAP,
     BTN_VIEW,
     BTN_FAVORITES,
     BTN_MARKET,
@@ -120,6 +122,7 @@ def build_menu_keyboard(extra_rows: list[list[KeyboardButton]] | None = None) ->
     ]
     if settings.gemini_enabled:
         rows.append([KeyboardButton(text=BTN_INTERVIEW_PREP), KeyboardButton(text=BTN_RESUME_IMPROVE)])
+        rows.append([KeyboardButton(text=BTN_SKILL_GAP)])
     rows.extend(extra_rows or [])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
