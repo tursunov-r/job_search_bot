@@ -234,6 +234,14 @@ async def get_broadcastable_subscribers(session: AsyncSession) -> list[Subscribe
     return list(result.all())
 
 
+async def list_adapter_health(session: AsyncSession) -> list[AdapterHealth]:
+    """Used by the web admin panel to show current scraper status
+    on-demand — the Telegram side only ever gets pushed an alert/recovery
+    message when the streak crosses the threshold, no "check anytime" view."""
+    result = await session.exec(select(AdapterHealth).order_by(AdapterHealth.adapter))
+    return list(result.all())
+
+
 async def record_adapter_poll_result(session: AsyncSession, adapter: str, raw_count: int) -> tuple[bool, bool]:
     """Returns (should_alert, recovered). should_alert is True exactly once
     when the empty-streak crosses settings.adapter_failure_threshold;
@@ -849,6 +857,16 @@ async def set_group_topic(session: AsyncSession, language_key: str, thread_id: i
     session.add(topic)
     await session.commit()
     return topic
+
+
+async def remove_group_topic(session: AsyncSession, language_key: str) -> bool:
+    result = await session.exec(select(GroupTopic).where(GroupTopic.language_key == language_key))
+    topic = result.first()
+    if topic is None:
+        return False
+    await session.delete(topic)
+    await session.commit()
+    return True
 
 
 async def get_topics_by_thread(session: AsyncSession) -> dict[int, list[str]]:
