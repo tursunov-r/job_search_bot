@@ -23,6 +23,7 @@ from jobsbot.web.routers import (
     staff,
     stats,
     subscribers,
+    vacancies,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -37,6 +38,7 @@ app.include_router(ads.router)
 app.include_router(reports.router)
 app.include_router(group_topics.router)
 app.include_router(adapter_health.router)
+app.include_router(vacancies.router)
 
 
 @app.on_event("startup")

@@ -76,6 +76,14 @@ async def get_source_by_id(session: AsyncSession, source_id: int) -> Source | No
     return result.first()
 
 
+async def list_sources(session: AsyncSession) -> list[Source]:
+    """Used by the web vacancy browser to label each row with its source
+    type without an N+1 lookup per vacancy — few enough rows to fetch in
+    one go and build an id -> Source map from."""
+    result = await session.exec(select(Source))
+    return list(result.all())
+
+
 async def get_enabled_telegram_channel_identifiers(session: AsyncSession) -> list[str]:
     result = await session.exec(
         select(Source.identifier).where(Source.type == "telegram_channel", Source.enabled == True)  # noqa: E712
@@ -107,6 +115,63 @@ async def get_vacancy_by_url(session: AsyncSession, url: str) -> Vacancy | None:
 async def get_vacancy_by_id(session: AsyncSession, vacancy_id: int) -> Vacancy | None:
     result = await session.exec(select(Vacancy).where(Vacancy.id == vacancy_id))
     return result.first()
+
+
+def _apply_vacancy_filters(
+    stmt,
+    *,
+    query: str | None,
+    language: str | None,
+    source_type: str | None,
+    hidden: bool | None,
+):
+    """Shared between list_vacancies and count_vacancies so the two can't
+    drift — a filter added to one must apply to the other, or the
+    pagination total would lie about how many pages there are."""
+    if query:
+        stmt = stmt.where(Vacancy.title.ilike(f"%{query}%"))
+    if language:
+        stmt = stmt.where(Vacancy.languages.like(f'%"{language}"%'))
+    if hidden is not None:
+        stmt = stmt.where(Vacancy.hidden == hidden)
+    if source_type:
+        stmt = stmt.join(Source, Source.id == Vacancy.source_id).where(Source.type == source_type)
+    return stmt
+
+
+async def list_vacancies(
+    session: AsyncSession,
+    *,
+    query: str | None = None,
+    language: str | None = None,
+    source_type: str | None = None,
+    hidden: bool | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[Vacancy]:
+    """Used by the web admin panel's vacancy browser — no Telegram
+    equivalent exists; admins there only ever see a vacancy via a
+    subscriber's report, never by browsing/searching the whole set."""
+    stmt = _apply_vacancy_filters(
+        select(Vacancy), query=query, language=language, source_type=source_type, hidden=hidden
+    )
+    result = await session.exec(stmt.order_by(Vacancy.id.desc()).offset(offset).limit(limit))
+    return list(result.all())
+
+
+async def count_vacancies(
+    session: AsyncSession,
+    *,
+    query: str | None = None,
+    language: str | None = None,
+    source_type: str | None = None,
+    hidden: bool | None = None,
+) -> int:
+    stmt = _apply_vacancy_filters(
+        select(func.count(Vacancy.id)), query=query, language=language, source_type=source_type, hidden=hidden
+    )
+    result = await session.exec(stmt)
+    return result.first() or 0
 
 
 async def save_vacancy(session: AsyncSession, subscriber_id: int, vacancy_id: int) -> bool:
